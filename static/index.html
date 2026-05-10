@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETMS — Expense Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── LOGIN PAGE ── -->
+  <div id="loginPage" class="auth-wrapper">
+    <div class="auth-left">
+      <div class="auth-brand">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+            <path d="M7 18l4-5 3 3 5-7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="brand-name">ETMS</span>
+      </div>
+      <div class="auth-hero">
+        <h1 class="auth-headline">Track every<br/><em>rupee</em> you earn<br/>and spend.</h1>
+        <p class="auth-caption">Smart expense management powered by AI for a better financial future.</p>
+        <div class="auth-features">
+          <div class="feature-item"><div class="feature-dot green"></div><span>Real-time income tracking</span></div>
+          <div class="feature-item"><div class="feature-dot red"></div><span>Expense monitoring</span></div>
+          <div class="feature-item"><div class="feature-dot blue"></div><span>AI-powered insights</span></div>
+        </div>
+      </div>
+      <div class="auth-footer">© 2026 ETMS. Built with FastAPI + MongoDB + Gemini AI</div>
+    </div>
+    <div class="auth-right">
+      <div class="auth-card">
+        <div class="auth-card-header">
+          <h2>Welcome back 👋</h2>
+          <p>Sign in or create a new account below</p>
+        </div>
+        <div id="loginError" class="alert alert-error" style="display:none"></div>
+        <div id="loginSuccess" class="alert alert-success" style="display:none"></div>
+        <div class="form-group">
+          <label>Username</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <input id="username" type="text" placeholder="Enter your username" onkeydown="if(event.key==='Enter')document.getElementById('password').focus()" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            <input id="password" type="password" placeholder="Enter your password" onkeydown="if(event.key==='Enter')login()" />
+          </div>
+        </div>
+        <button class="btn-primary full" id="loginBtn" onclick="login()">
+          <span id="loginBtnText">Sign In</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+        <p class="auth-note">New user? A new username & password will <strong>auto-register</strong> your account.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DASHBOARD ── -->
+  <div id="appPage" style="display:none">
+
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-brand-icon">
+          <svg width="18" height="18" viewBox="0 0 28 28" fill="none">
+            <path d="M7 18l4-5 3 3 5-7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="nav-brand">ETMS</span>
+        <span class="nav-sep"></span>
+        <div class="nav-tabs">
+          <button class="nav-tab active" onclick="showSection('dashboard', this)">Dashboard</button>
+          <button class="nav-tab" onclick="showSection('report', this)">📊 Monthly Report</button>
+        </div>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user">
+          <div class="user-avatar" id="userAvatar">U</div>
+          <span class="user-name" id="navUsername">User</span>
+        </div>
+        <button class="btn-logout" onclick="logout()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
+      </div>
+    </nav>
+
+    <!-- ── DASHBOARD SECTION ── -->
+    <div id="dashboardSection">
+      <main class="main-content">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" id="greetingText">Good morning 👋</h1>
+            <p class="page-sub" id="greetingDate"></p>
+          </div>
+          <div class="month-chip" id="monthBadge"></div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stat-grid">
+          <div class="stat-card stat-income">
+            <div class="stat-icon income-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Total Income</span>
+              <span class="stat-value income-color" id="totalIncome">₹0</span>
+            </div>
+            <div class="stat-badge income-badge" id="incomeBadge">0 entries</div>
+          </div>
+          <div class="stat-card stat-expense">
+            <div class="stat-icon expense-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/><polyline points="17,18 23,18 23,12"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Total Expense</span>
+              <span class="stat-value expense-color" id="totalExpense">₹0</span>
+            </div>
+            <div class="stat-badge expense-badge" id="expenseBadge">0 entries</div>
+          </div>
+          <div class="stat-card stat-balance">
+            <div class="stat-icon balance-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Current Balance</span>
+              <span class="stat-value balance-color" id="totalBalance">₹0</span>
+            </div>
+            <div class="balance-progress">
+              <div class="progress-track"><div class="progress-fill" id="balanceBar" style="width:0%"></div></div>
+              <span class="progress-label" id="balancePercent">0% saved</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two Column -->
+        <div class="two-col">
+          <div class="card add-panel">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Add Transaction
+              </h2>
+            </div>
+            <div class="type-toggle">
+              <button class="type-btn income-active" id="incomeBtn" onclick="setType('income')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>Income
+              </button>
+              <button class="type-btn" id="expenseBtn" onclick="setType('expense')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6,9 12,15 18,9"/></svg>Expense
+              </button>
+            </div>
+            <div class="form-group">
+              <label>Amount (₹)</label>
+              <div class="input-wrap prefix-wrap">
+                <span class="input-prefix">₹</span>
+                <input id="amount" type="number" placeholder="0.00" min="0.01" step="0.01" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <div class="input-wrap">
+                <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                <input id="category" type="text" placeholder="e.g. Salary, Groceries, Rent…" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Note <span class="optional-tag">(optional)</span></label>
+              <div class="input-wrap">
+                <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <input id="note" type="text" placeholder="Add a short note…" />
+              </div>
+            </div>
+            <button class="btn-primary full" id="addBtn" onclick="addTransaction()">
+              <span id="addBtnText">Add Income</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <div id="addAlert" class="alert" style="display:none; margin-top:12px;"></div>
+          </div>
+
+          <div class="card list-panel">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                Recent Transactions
+              </h2>
+              <div class="filter-row">
+                <button class="filter-btn active" onclick="filterList('all',this)">All</button>
+                <button class="filter-btn" onclick="filterList('income',this)">Income</button>
+                <button class="filter-btn" onclick="filterList('expense',this)">Expense</button>
+              </div>
+            </div>
+            <div id="emptyState" class="empty-state">
+              <div class="empty-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+              </div>
+              <p>No transactions yet</p>
+              <span>Add your first transaction to see it here</span>
+            </div>
+            <ul id="list" class="tx-list"></ul>
+          </div>
+        </div>
+
+        <!-- AI Section -->
+        <div class="ai-section">
+          <div class="ai-section-header">
+            <div class="ai-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              AI Powered
+            </div>
+            <h2 class="ai-title">Smart Financial Tools</h2>
+            <p class="ai-sub">Let AI help you track and manage your finances better</p>
+          </div>
+          <div class="ai-grid">
+            <div class="card ai-card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  Smart Import
+                </h2>
+                <span class="ai-chip">Email / SMS</span>
+              </div>
+              <div class="ai-card-body">
+                <p class="ai-desc">Paste your bank SMS or email — AI will automatically extract the transaction details.</p>
+                <div class="form-group">
+                  <label>Paste Email or SMS Text</label>
+                  <textarea id="smsText" class="ai-textarea" placeholder="e.g. Your account has been debited Rs.3,200 for Grocery Store on 08-May-2026."></textarea>
+                </div>
+                <button class="btn-ai" id="extractBtn" onclick="extractTransaction()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <span id="extractBtnText">Extract Transaction</span>
+                </button>
+                <div id="extractResult" class="ai-result" style="display:none"></div>
+              </div>
+            </div>
+            <div class="card ai-card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+                  Spending Analysis
+                </h2>
+                <span class="ai-chip">AI Insights</span>
+              </div>
+              <div class="ai-card-body">
+                <p class="ai-desc">Get a detailed analysis of your spending habits with personalized saving suggestions.</p>
+                <div class="ai-highlights" id="aiHighlights" style="display:none">
+                  <div class="highlight-item"><span class="h-label">Income</span><span class="h-val income-color" id="h-income-val">₹0</span></div>
+                  <div class="highlight-item"><span class="h-label">Expense</span><span class="h-val expense-color" id="h-expense-val">₹0</span></div>
+                  <div class="highlight-item"><span class="h-label">Balance</span><span class="h-val balance-color" id="h-balance-val">₹0</span></div>
+                </div>
+                <button class="btn-ai btn-ai-green" id="analyzeBtn" onclick="analyzeSpending()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
+                  <span id="analyzeBtnText">Analyze My Spending</span>
+                </button>
+                <div id="analysisResult" class="ai-result analysis-result" style="display:none"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ── MONTHLY REPORT SECTION ── -->
+    <div id="reportSection" style="display:none">
+      <main class="main-content">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">📊 Monthly Report</h1>
+            <p class="page-sub">AI-generated spending analysis with charts</p>
+          </div>
+        </div>
+
+        <!-- Month Selector -->
+        <div class="report-controls card">
+          <div class="report-controls-inner">
+            <div class="report-selectors">
+              <div class="form-group" style="margin:0">
+                <label>Select Month</label>
+                <select id="reportMonth" class="report-select">
+                  <option value="1">January</option><option value="2">February</option>
+                  <option value="3">March</option><option value="4">April</option>
+                  <option value="5" selected>May</option><option value="6">June</option>
+                  <option value="7">July</option><option value="8">August</option>
+                  <option value="9">September</option><option value="10">October</option>
+                  <option value="11">November</option><option value="12">December</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label>Select Year</label>
+                <select id="reportYear" class="report-select">
+                  <option value="2024">2024</option>
+                  <option value="2025">2025</option>
+                  <option value="2026" selected>2026</option>
+                </select>
+              </div>
+            </div>
+            <div class="report-btns">
+              <button class="btn-primary" onclick="loadReport()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
+                <span id="loadReportText">Load Charts</span>
+              </button>
+              <button class="btn-ai" onclick="generateAIReport()" id="aiReportBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                <span id="aiReportBtnText">Generate AI Report</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report Stats -->
+        <div id="reportStats" style="display:none">
+          <div class="stat-grid" style="margin-top:20px">
+            <div class="stat-card stat-income">
+              <div class="stat-icon income-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
+              </div>
+              <div class="stat-body">
+                <span class="stat-label">Month Income</span>
+                <span class="stat-value income-color" id="rIncome">₹0</span>
+              </div>
+            </div>
+            <div class="stat-card stat-expense">
+              <div class="stat-icon expense-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/></svg>
+              </div>
+              <div class="stat-body">
+                <span class="stat-label">Month Expense</span>
+                <span class="stat-value expense-color" id="rExpense">₹0</span>
+              </div>
+            </div>
+            <div class="stat-card stat-balance">
+              <div class="stat-icon balance-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              </div>
+              <div class="stat-body">
+                <span class="stat-label">Month Savings</span>
+                <span class="stat-value balance-color" id="rSavings">₹0</span>
+              </div>
+              <div class="stat-badge income-badge" id="rSavingsRate">0% saved</div>
+            </div>
+          </div>
+
+          <!-- Charts Grid -->
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2 class="card-title">🍩 Category-wise Expenses</h2>
+              </div>
+              <div class="chart-body">
+                <canvas id="doughnutChart"></canvas>
+              </div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2 class="card-title">📊 Expense by Category</h2>
+              </div>
+              <div class="chart-body">
+                <canvas id="barChart"></canvas>
+              </div>
+            </div>
+            <div class="card chart-card chart-full">
+              <div class="card-header">
+                <h2 class="card-title">📈 Daily Spending Trend</h2>
+              </div>
+              <div class="chart-body">
+                <canvas id="lineChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Category Table -->
+          <div class="card" style="margin-top:20px">
+            <div class="card-header">
+              <h2 class="card-title">📋 Category-wise Breakdown</h2>
+            </div>
+            <div id="categoryTable" class="category-table"></div>
+          </div>
+        </div>
+
+        <!-- AI Report -->
+        <div id="aiReportResult" style="display:none; margin-top:20px">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                AI Monthly Report — <span id="reportMonthName"></span>
+              </h2>
+              <div class="ai-chip">Gemini AI</div>
+            </div>
+            <div id="aiReportContent" class="ai-report-content"></div>
+          </div>
+        </div>
+
+        <div id="reportEmpty" class="empty-state" style="margin-top:40px; display:none">
+          <div class="empty-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <p>No transactions found</p>
+          <span>Add some transactions first, then generate a report</span>
+        </div>
+
+      </main>
+    </div>
+
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

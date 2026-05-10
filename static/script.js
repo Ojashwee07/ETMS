@@ -1,0 +1,412 @@
+/* ─── STATE ──────────────────────────────────────── */
+let currentUser = "";
+let currentType = "income";
+let allTransactions = [];
+let doughnutChart = null, barChart = null, lineChart = null;
+
+/* ─── LOGIN ──────────────────────────────────────── */
+async function login() {
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value.trim();
+  const errEl = document.getElementById("loginError");
+  const btn   = document.getElementById("loginBtn");
+  const btnText = document.getElementById("loginBtnText");
+  errEl.style.display = "none";
+  if (!username || !password) { errEl.textContent="Please enter username and password."; errEl.style.display="block"; return; }
+  btn.disabled=true; btnText.textContent="Signing in…";
+  try {
+    const res  = await fetch("/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+    const data = await res.json();
+    if (res.ok && data.status==="ok") {
+      currentUser = username;
+      document.getElementById("navUsername").textContent = username;
+      document.getElementById("userAvatar").textContent  = username.charAt(0).toUpperCase();
+      setGreeting();
+      document.getElementById("loginPage").style.display = "none";
+      document.getElementById("appPage").style.display   = "block";
+      loadData();
+    } else {
+      errEl.textContent = data.detail || "Login failed.";
+      errEl.style.display = "block";
+    }
+  } catch(e) {
+    errEl.textContent="Server error. Make sure backend is running."; errEl.style.display="block";
+  } finally { btn.disabled=false; btnText.textContent="Sign In"; }
+}
+
+/* ─── LOGOUT ─────────────────────────────────────── */
+function logout() {
+  currentUser=""; allTransactions=[];
+  document.getElementById("list").innerHTML="";
+  document.getElementById("username").value="";
+  document.getElementById("password").value="";
+  document.getElementById("appPage").style.display   = "none";
+  document.getElementById("loginPage").style.display = "flex";
+}
+
+/* ─── NAV TABS ───────────────────────────────────── */
+function showSection(section, btn) {
+  document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("dashboardSection").style.display = section==="dashboard" ? "block" : "none";
+  document.getElementById("reportSection").style.display    = section==="report"    ? "block" : "none";
+}
+
+/* ─── TYPE TOGGLE ────────────────────────────────── */
+function setType(type) {
+  currentType = type;
+  const incBtn  = document.getElementById("incomeBtn");
+  const expBtn  = document.getElementById("expenseBtn");
+  const addBtn  = document.getElementById("addBtn");
+  const addText = document.getElementById("addBtnText");
+  if (type==="income") {
+    incBtn.className="type-btn income-active"; expBtn.className="type-btn";
+    addBtn.className="btn-primary full"; addText.textContent="Add Income";
+  } else {
+    expBtn.className="type-btn expense-active"; incBtn.className="type-btn";
+    addBtn.className="btn-primary full expense-mode"; addText.textContent="Add Expense";
+  }
+}
+
+/* ─── ADD TRANSACTION ────────────────────────────── */
+async function addTransaction() {
+  const rawAmount = document.getElementById("amount").value.trim();
+  const category  = document.getElementById("category").value.trim();
+  const note      = document.getElementById("note").value.trim();
+  const alertEl   = document.getElementById("addAlert");
+  const btn       = document.getElementById("addBtn");
+  const btnText   = document.getElementById("addBtnText");
+  alertEl.style.display="none";
+  if (!rawAmount||parseFloat(rawAmount)<=0) { showAddAlert("error","Please enter a valid amount."); return; }
+  if (!category) { showAddAlert("error","Please enter a category."); return; }
+  const amount = currentType==="expense" ? -Math.abs(parseFloat(rawAmount)) : Math.abs(parseFloat(rawAmount));
+  const label  = btnText.textContent;
+  btn.disabled=true; btnText.textContent="Adding…";
+  try {
+    await fetch("/add",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({amount:String(amount),category:note?`${category} — ${note}`:category,user:currentUser})});
+    document.getElementById("amount").value="";
+    document.getElementById("category").value="";
+    document.getElementById("note").value="";
+    showAddAlert("success",`${currentType==="income"?"Income":"Expense"} of ₹${Math.abs(amount).toLocaleString("en-IN")} added!`);
+    loadData();
+  } catch(e) { showAddAlert("error","Failed to add transaction."); }
+  finally { btn.disabled=false; btnText.textContent=label; }
+}
+
+function showAddAlert(type, msg) {
+  const el = document.getElementById("addAlert");
+  el.className=`alert alert-${type}`; el.textContent=msg; el.style.display="block";
+  setTimeout(()=>{el.style.display="none";},3000);
+}
+
+/* ─── LOAD DATA ──────────────────────────────────── */
+async function loadData() {
+  try {
+    const res  = await fetch(`/data?user=${currentUser}`);
+    const data = await res.json();
+    allTransactions = data;
+    renderList(allTransactions);
+    updateStats(allTransactions);
+  } catch(e) { console.error("Load failed:",e); }
+}
+
+/* ─── RENDER LIST ────────────────────────────────── */
+function renderList(transactions) {
+  const list    = document.getElementById("list");
+  const emptyEl = document.getElementById("emptyState");
+  list.innerHTML="";
+  const reversed = [...transactions].reverse();
+  if (reversed.length===0) { emptyEl.style.display="flex"; return; }
+  emptyEl.style.display="none";
+  reversed.forEach((t,i) => {
+    const amt    = parseFloat(t.amount);
+    const isInc  = amt>=0;
+    const absAmt = Math.abs(amt).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const parts  = t.category.split(" — ");
+    const catLabel = parts[0];
+    const noteText = parts.length>1 ? parts.slice(1).join(" — ") : "";
+    const timeText = t.created_at||(isInc?"Income":"Expense");
+    const li = document.createElement("li");
+    li.className="tx-item"; li.dataset.type=isInc?"income":"expense";
+    li.dataset.id=t.id||""; li.style.animationDelay=`${i*0.03}s`;
+    li.innerHTML=`
+      <div class="tx-icon ${isInc?"inc":"exp"}">
+        ${isInc
+          ?`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>`
+          :`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6,9 12,15 18,9"/></svg>`}
+      </div>
+      <div class="tx-info">
+        <div class="tx-category">${escapeHtml(catLabel)}</div>
+        <div class="tx-note">${noteText?escapeHtml(noteText)+" &middot; ":""}${escapeHtml(timeText)}</div>
+      </div>
+      <div class="tx-right">
+        <div class="tx-amount ${isInc?"inc":"exp"}">${isInc?"+":"−"}₹${absAmt}</div>
+        ${t.id?`<button class="btn-delete" onclick="deleteTransaction('${t.id}',this)" title="Delete">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/></svg>
+        </button>`:""}
+      </div>`;
+    list.appendChild(li);
+  });
+}
+
+/* ─── FILTER ─────────────────────────────────────── */
+function filterList(type, btn) {
+  document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  const filtered = type==="all" ? allTransactions : allTransactions.filter(t=>type==="income"?parseFloat(t.amount)>=0:parseFloat(t.amount)<0);
+  renderList(filtered);
+}
+
+/* ─── UPDATE STATS ───────────────────────────────── */
+function updateStats(transactions) {
+  let income=0, expense=0, incCount=0, expCount=0;
+  transactions.forEach(t=>{
+    const amt=parseFloat(t.amount);
+    if(amt>=0){income+=amt;incCount++;}
+    else{expense+=Math.abs(amt);expCount++;}
+  });
+  const balance=income-expense;
+  const pct=income>0?Math.min(100,Math.round((balance/income)*100)):0;
+  document.getElementById("totalIncome").textContent  = "₹"+income.toLocaleString("en-IN",{maximumFractionDigits:0});
+  document.getElementById("totalExpense").textContent = "₹"+expense.toLocaleString("en-IN",{maximumFractionDigits:0});
+  document.getElementById("totalBalance").textContent = "₹"+balance.toLocaleString("en-IN",{maximumFractionDigits:0});
+  document.getElementById("incomeBadge").textContent  = `${incCount} ${incCount===1?"entry":"entries"}`;
+  document.getElementById("expenseBadge").textContent = `${expCount} ${expCount===1?"entry":"entries"}`;
+  document.getElementById("balanceBar").style.width   = pct+"%";
+  document.getElementById("balancePercent").textContent = `${pct}% saved`;
+  document.getElementById("totalBalance").style.color = balance>=0?"var(--blue)":"var(--red)";
+}
+
+/* ─── DELETE ─────────────────────────────────────── */
+async function deleteTransaction(id, btn) {
+  if (!confirm("Delete this transaction?")) return;
+  btn.disabled=true;
+  try {
+    const res = await fetch(`/delete/${id}?user=${currentUser}`,{method:"DELETE"});
+    if (res.ok) {
+      const li=btn.closest(".tx-item");
+      li.style.cssText="opacity:0;transform:translateX(20px);transition:all 0.25s ease";
+      setTimeout(()=>{li.remove();loadData();},250);
+    } else { alert("Could not delete."); btn.disabled=false; }
+  } catch(e) { alert("Server error."); btn.disabled=false; }
+}
+
+/* ─── GREETING ───────────────────────────────────── */
+function setGreeting() {
+  const hour=new Date().getHours();
+  const emoji=hour<12?"🌅":hour<17?"☀️":"🌙";
+  const word=hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+  document.getElementById("greetingText").textContent=`${word}, ${currentUser} ${emoji}`;
+  const now=new Date();
+  document.getElementById("greetingDate").textContent=now.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  document.getElementById("monthBadge").textContent=now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  const sel=document.getElementById("reportMonth");
+  if(sel) sel.value=String(now.getMonth()+1);
+}
+
+/* ─── AI EXTRACT ─────────────────────────────────── */
+async function extractTransaction() {
+  const text=document.getElementById("smsText").value.trim();
+  const btn=document.getElementById("extractBtn");
+  const btnText=document.getElementById("extractBtnText");
+  const result=document.getElementById("extractResult");
+  if(!text){result.style.display="block";result.className="ai-result ai-error";result.innerHTML="⚠️ Please paste an SMS or email.";return;}
+  btn.disabled=true; btnText.textContent="Extracting…"; result.style.display="none";
+  try {
+    const res=await fetch("/ai/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,user:currentUser})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.detail||"Failed");
+    const d=data.data;
+    if(!d.found){result.className="ai-result ai-error";result.innerHTML="❌ No transaction found. Try a bank SMS.";result.style.display="block";return;}
+    const typeColor=d.type==="income"?"var(--green)":"var(--red)";
+    const sign=d.type==="income"?"+":"-";
+    result.className="ai-result ai-success";
+    result.innerHTML=`<div class="extract-found">
+      <div class="extract-top">
+        <span class="extract-badge" style="background:${d.type==="income"?"var(--green-light)":"var(--red-light)"};color:${typeColor}">${d.type==="income"?"Income":"Expense"}</span>
+        <strong class="extract-amount" style="color:${typeColor}">${sign}₹${parseFloat(d.amount).toLocaleString("en-IN")}</strong>
+      </div>
+      <div class="extract-meta">
+        <span>📂 ${escapeHtml(d.category)}</span>
+        ${d.note?`<span>📝 ${escapeHtml(d.note)}</span>`:""}
+        ${d.date?`<span>📅 ${escapeHtml(d.date)}</span>`:""}
+      </div>
+      <button class="btn-add-extracted" onclick="addExtracted(${d.amount},'${escapeHtml(d.category)}','${escapeHtml(d.note||"")}','${d.type}')">➕ Add This Transaction</button>
+    </div>`;
+    result.style.display="block";
+  } catch(e){result.className="ai-result ai-error";result.innerHTML=`❌ ${e.message}`;result.style.display="block";}
+  finally{btn.disabled=false;btnText.textContent="Extract Transaction";}
+}
+
+async function addExtracted(amount,category,note,type) {
+  const finalAmount=type==="expense"?-Math.abs(amount):Math.abs(amount);
+  const fullCategory=note?`${category} — ${note}`:category;
+  try {
+    await fetch("/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount:String(finalAmount),category:fullCategory,user:currentUser})});
+    document.getElementById("smsText").value="";
+    const result=document.getElementById("extractResult");
+    result.className="ai-result ai-success";result.innerHTML="✅ Transaction added!";result.style.display="block";
+    setTimeout(()=>{result.style.display="none";},2500);
+    loadData();
+  } catch(e){alert("Failed to add.");}
+}
+
+/* ─── AI ANALYZE ─────────────────────────────────── */
+async function analyzeSpending() {
+  const btn=document.getElementById("analyzeBtn");
+  const btnText=document.getElementById("analyzeBtnText");
+  const result=document.getElementById("analysisResult");
+  btn.disabled=true; btnText.textContent="Analyzing…"; result.style.display="none";
+  try {
+    const res=await fetch("/ai/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:currentUser})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.detail||"Failed");
+    const s=data.summary;
+    document.getElementById("aiHighlights").style.display="flex";
+    document.getElementById("h-income-val").textContent ="₹"+s.income.toLocaleString("en-IN");
+    document.getElementById("h-expense-val").textContent="₹"+s.expense.toLocaleString("en-IN");
+    document.getElementById("h-balance-val").textContent="₹"+s.balance.toLocaleString("en-IN");
+    result.className="ai-result analysis-result";
+    result.innerHTML=formatMarkdown(data.analysis);
+    result.style.display="block";
+  } catch(e){result.className="ai-result ai-error";result.innerHTML=`❌ ${e.message}`;result.style.display="block";}
+  finally{btn.disabled=false;btnText.textContent="Analyze My Spending";}
+}
+
+/* ─── MONTHLY REPORT ─────────────────────────────── */
+async function loadReport() {
+  const month=parseInt(document.getElementById("reportMonth").value);
+  const year=parseInt(document.getElementById("reportYear").value);
+  const btn=document.getElementById("loadReportText");
+  btn.textContent="Loading…";
+  document.getElementById("reportStats").style.display="none";
+  document.getElementById("reportEmpty").style.display="none";
+  try {
+    const res=await fetch(`/report/data?user=${currentUser}&month=${month}&year=${year}`);
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.detail||"Failed");
+    if(d.total_txns===0){document.getElementById("reportEmpty").style.display="flex";return;}
+    document.getElementById("reportStats").style.display="block";
+    document.getElementById("rIncome").textContent  ="₹"+d.income.toLocaleString("en-IN");
+    document.getElementById("rExpense").textContent ="₹"+d.expense.toLocaleString("en-IN");
+    document.getElementById("rSavings").textContent ="₹"+d.savings.toLocaleString("en-IN");
+    document.getElementById("rSavingsRate").textContent=`${d.savings_rate}% saved`;
+    renderCharts(d);
+    renderCategoryTable(d.expense_categories, d.expense);
+  } catch(e){alert("Error: "+e.message);}
+  finally{btn.textContent="Load Charts";}
+}
+
+async function generateAIReport() {
+  const month=parseInt(document.getElementById("reportMonth").value);
+  const year=parseInt(document.getElementById("reportYear").value);
+  const btn=document.getElementById("aiReportBtnText");
+  const resultDiv=document.getElementById("aiReportResult");
+  btn.textContent="Generating…";
+  document.getElementById("aiReportResult").style.display="none";
+  try {
+    const res=await fetch("/ai/report",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:currentUser,month,year})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.detail||"Failed");
+    document.getElementById("reportMonthName").textContent=data.month;
+    document.getElementById("aiReportContent").innerHTML=formatMarkdown(data.report);
+    resultDiv.style.display="block";
+    resultDiv.scrollIntoView({behavior:"smooth",block:"start"});
+  } catch(e){alert("AI Error: "+e.message);}
+  finally{btn.textContent="Generate AI Report";}
+}
+
+/* ─── CHARTS ─────────────────────────────────────── */
+const COLORS = [
+  "#3b6ef8","#12b76a","#f04438","#f79009","#7c3aed",
+  "#06aed4","#ee46bc","#85cc34","#ff6b35","#4a9eff"
+];
+
+function renderCharts(d) {
+  // Destroy old charts
+  if(doughnutChart){doughnutChart.destroy();doughnutChart=null;}
+  if(barChart){barChart.destroy();barChart=null;}
+  if(lineChart){lineChart.destroy();lineChart=null;}
+
+  const expCats = d.expense_categories.slice(0,8);
+  const labels  = expCats.map(c=>c.name);
+  const amounts = expCats.map(c=>c.amount);
+
+  // Doughnut
+  const dCtx=document.getElementById("doughnutChart").getContext("2d");
+  doughnutChart=new Chart(dCtx,{
+    type:"doughnut",
+    data:{labels,datasets:[{data:amounts,backgroundColor:COLORS,borderWidth:2,borderColor:"white"}]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{
+      legend:{position:"bottom",labels:{font:{size:11,family:"Plus Jakarta Sans"},padding:12,boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ₹${ctx.parsed.toLocaleString("en-IN")}`}}
+    },cutout:"65%"}
+  });
+
+  // Bar
+  const bCtx=document.getElementById("barChart").getContext("2d");
+  barChart=new Chart(bCtx,{
+    type:"bar",
+    data:{labels,datasets:[{label:"Expense (₹)",data:amounts,backgroundColor:COLORS,borderRadius:8,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`₹${ctx.parsed.y.toLocaleString("en-IN")}`}}
+    },scales:{
+      y:{beginAtZero:true,grid:{color:"#f2f4f7"},ticks:{callback:v=>"₹"+v.toLocaleString("en-IN"),font:{size:11}}},
+      x:{grid:{display:false},ticks:{font:{size:11}}}
+    }}
+  });
+
+  // Line
+  const lCtx=document.getElementById("lineChart").getContext("2d");
+  const dailyLabels  = d.daily_expense.map(i=>`Day ${i.day}`);
+  const dailyAmounts = d.daily_expense.map(i=>i.amount);
+  lineChart=new Chart(lCtx,{
+    type:"line",
+    data:{labels:dailyLabels,datasets:[{
+      label:"Daily Spending (₹)", data:dailyAmounts,
+      borderColor:"#3b6ef8", backgroundColor:"rgba(59,110,248,0.08)",
+      borderWidth:2.5, pointBackgroundColor:"#3b6ef8",
+      pointRadius:4, pointHoverRadius:6, fill:true, tension:0.4
+    }]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`₹${ctx.parsed.y.toLocaleString("en-IN")}`}}
+    },scales:{
+      y:{beginAtZero:true,grid:{color:"#f2f4f7"},ticks:{callback:v=>"₹"+v.toLocaleString("en-IN"),font:{size:11}}},
+      x:{grid:{display:false},ticks:{font:{size:11}}}
+    }}
+  });
+}
+
+function renderCategoryTable(cats, totalExpense) {
+  const div=document.getElementById("categoryTable");
+  if(!cats||cats.length===0){div.innerHTML='<p style="padding:20px;color:var(--gray-400);text-align:center">No expense data</p>';return;}
+  const rows=cats.map((c,i)=>{
+    const pct=totalExpense>0?((c.amount/totalExpense)*100).toFixed(1):0;
+    return `<div class="cat-row">
+      <div class="cat-rank">${i+1}</div>
+      <div class="cat-color" style="background:${COLORS[i%COLORS.length]}"></div>
+      <div class="cat-name">${escapeHtml(c.name)}</div>
+      <div class="cat-bar-wrap"><div class="cat-bar" style="width:${pct}%;background:${COLORS[i%COLORS.length]}"></div></div>
+      <div class="cat-pct">${pct}%</div>
+      <div class="cat-amt">₹${c.amount.toLocaleString("en-IN")}</div>
+    </div>`;
+  }).join("");
+  div.innerHTML=rows;
+}
+
+/* ─── UTILS ──────────────────────────────────────── */
+function formatMarkdown(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/^#{1,3}\s+(.+)$/gm,"<h4>$1</h4>")
+    .replace(/\n\n/g,"</p><p>")
+    .replace(/\n/g,"<br/>")
+    .replace(/^/,"<p>").replace(/$/,"</p>");
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
