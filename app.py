@@ -18,8 +18,8 @@ db        = client["etms_db"]
 users_col = db["users"]
 txns_col  = db["transactions"]
 
-genai.configure(api_key="AIzaSyDKH9WAOyZWcB0Yn-NxryiFuCXtUNGAAcw")
-gemini = genai.GenerativeModel("gemini-1.5-flash")
+genai.configure(api_key="AIzaSyBJ2WCk9fLoIEQNt0QGtzT_zf8cvc_gxB0")
+gemini = genai.GenerativeModel("models/gemini-1.5-flash")
 
 def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
 

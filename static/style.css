@@ -892,3 +892,23 @@ body {
   .cat-row { grid-template-columns:28px 10px 1fr 80px; }
   .cat-bar-wrap,.cat-pct { display:none; }
 }
+
+/* ─── DOWNLOAD BUTTON ────────────────────────────── */
+.btn-download {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.8rem; font-weight: 700;
+  font-family: var(--font);
+  color: var(--purple);
+  background: var(--purple-light);
+  border: 1.5px solid rgba(124,58,237,0.25);
+  border-radius: var(--radius-md);
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-download:hover {
+  background: var(--purple);
+  color: white;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+  transform: translateY(-1px);
+}
+.btn-download:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
