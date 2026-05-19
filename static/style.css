@@ -893,22 +893,169 @@ body {
   .cat-bar-wrap,.cat-pct { display:none; }
 }
 
-/* ─── DOWNLOAD BUTTON ────────────────────────────── */
-.btn-download {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px;
-  font-size: 0.8rem; font-weight: 700;
-  font-family: var(--font);
-  color: var(--purple);
-  background: var(--purple-light);
-  border: 1.5px solid rgba(124,58,237,0.25);
-  border-radius: var(--radius-md);
-  cursor: pointer; transition: all 0.2s;
+/* ─── SIGNUP PAGE ───────────────────────────────────── */
+.signup-right { overflow-y: auto; align-items: flex-start; padding: 32px 36px; }
+.signup-card  { max-width: 420px; width: 100%; margin: auto; }
+
+/* Step indicators */
+.signup-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 28px;
 }
-.btn-download:hover {
-  background: var(--purple);
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.step-circle {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--gray-200);
+  background: white;
+  color: var(--gray-400);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.25s;
+}
+.step-item span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gray-400);
+  transition: color 0.25s;
+}
+.step-item.active .step-circle {
+  border-color: var(--blue);
+  background: var(--blue);
   color: white;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.3);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 4px var(--blue-glow);
 }
-.btn-download:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
+.step-item.active span { color: var(--blue); }
+.step-item.done .step-circle {
+  border-color: var(--green);
+  background: var(--green);
+  color: white;
+}
+.step-item.done span { color: var(--green); }
+.step-line {
+  flex: 1;
+  height: 2px;
+  background: var(--gray-200);
+  margin-bottom: 22px;
+}
+
+/* Input select */
+.input-select {
+  width: 100%;
+  padding: 11px 14px 11px 38px;
+  font-size: 0.9rem;
+  font-family: var(--font);
+  color: var(--gray-800);
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  transition: all 0.2s;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+}
+.input-select:focus {
+  border-color: var(--blue);
+  background: white;
+  box-shadow: 0 0 0 4px var(--blue-glow);
+}
+
+/* Field hint */
+.field-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--gray-400);
+  margin-top: 5px;
+}
+
+/* Signup button row */
+.signup-btn-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.signup-btn-row .btn-primary { flex: 1; }
+
+/* Outline button */
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 18px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: var(--font);
+  color: var(--gray-600);
+  background: white;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-outline:hover {
+  border-color: var(--gray-300);
+  background: var(--gray-50);
+}
+
+/* Auth link */
+.auth-link {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+.auth-link:hover { text-decoration: underline; }
+
+/* Password toggle */
+.toggle-pw {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--gray-400);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+.toggle-pw:hover { color: var(--blue); }
+
+/* Password strength */
+.pw-strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.pw-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--gray-100);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.pw-fill {
+  height: 100%;
+  border-radius: 99px;
+  width: 0%;
+  transition: all 0.3s ease;
+}
+.pw-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 70px;
+}
+
+@media (max-width: 640px) {
+  .signup-right { padding: 24px 20px; }
+  .signup-btn-row { flex-direction: column-reverse; }
+}
