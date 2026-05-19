@@ -7,6 +7,7 @@ import hashlib, uuid, os, json
 from datetime import datetime
 from collections import defaultdict
 import google.generativeai as genai
+#changebyansh
 
 load_dotenv()
 
@@ -18,11 +19,11 @@ db        = client["etms_db"]
 users_col = db["users"]
 txns_col  = db["transactions"]
 
-genai.configure(api_key="AIzaSyBJ2WCk9fLoIEQNt0QGtzT_zf8cvc_gxB0")
-gemini = genai.GenerativeModel("models/gemini-1.5-flash")
+genai.configure(api_key="AIzaSyDKH9WAOyZWcB0Yn-NxryiFuCXtUNGAAcw")
+gemini = genai.GenerativeModel("gemini-1.5-flash")
 
 def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
-
+#changebyansh
 # ── Models ─────────────────────────────────────────────
 class User(BaseModel):
     username: str
@@ -53,6 +54,19 @@ class Transaction(BaseModel):
         if not v: raise ValueError("Empty category")
         return v
 
+
+class RegisterUser(BaseModel):
+    username: str
+    password: str
+    fullname: str
+    email: str = ""
+    phone: str = ""
+    monthly_income: float = 0
+    income_source: str = ""
+    monthly_budget: float = 0
+    savings_goal: float = 0
+    currency: str = "INR"
+
 class SMSEmailText(BaseModel):
     text: str
     user: str
@@ -79,6 +93,41 @@ def login(user: User):
         raise HTTPException(status_code=401, detail="Incorrect password")
     users_col.insert_one({"username": user.username, "password": hashed, "created_at": datetime.now().isoformat()})
     return {"status": "ok", "message": "Account created!"}
+
+# ── POST /register ──────────────────────────────────────
+@app.post("/register")
+def register(u: RegisterUser):
+    existing = users_col.find_one({"username": {"$regex": f"^{u.username}$", "$options": "i"}})
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already taken. Please choose another.")
+    if len(u.username.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+    if len(u.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+    hashed = hash_password(u.password)
+    users_col.insert_one({
+        "username": u.username,
+        "password": hashed,
+        "fullname": u.fullname,
+        "email": u.email,
+        "phone": u.phone,
+        "monthly_income": u.monthly_income,
+        "income_source": u.income_source,
+        "monthly_budget": u.monthly_budget,
+        "savings_goal": u.savings_goal,
+        "currency": u.currency,
+        "created_at": datetime.now().isoformat()
+    })
+    # Auto-add first income transaction if monthly income is provided
+    if u.monthly_income > 0:
+        txns_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "amount": str(u.monthly_income),
+            "category": f"{u.income_source or 'Salary'} — Monthly Income",
+            "user": u.username,
+            "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
+        })
+    return {"status": "ok", "message": "Account created successfully!"}
 
 # ── POST /add ───────────────────────────────────────────
 @app.post("/add")
