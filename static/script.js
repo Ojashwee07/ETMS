@@ -4,6 +4,151 @@ let currentType = "income";
 let allTransactions = [];
 let doughnutChart = null, barChart = null, lineChart = null;
 
+/* ─── SIGNUP STATE ───────────────────────────────── */
+let signupData = {};
+
+function showSignup() {
+  document.getElementById("loginPage").style.display  = "none";
+  document.getElementById("signupPage").style.display = "flex";
+  signupData = {};
+  signupGoToStep(1);
+}
+
+function showLogin() {
+  document.getElementById("signupPage").style.display = "none";
+  document.getElementById("loginPage").style.display  = "flex";
+}
+
+function signupGoToStep(step) {
+  [1,2,3].forEach(s => {
+    document.getElementById(`signupStep${s}`).style.display = s === step ? "block" : "none";
+    const ind = document.getElementById(`step${s}Ind`);
+    ind.classList.toggle("active", s === step);
+    ind.classList.toggle("done",   s < step);
+  });
+  document.getElementById("signupError").style.display   = "none";
+  document.getElementById("signupSuccess").style.display = "none";
+}
+
+function signupNext(step) {
+  const errEl = document.getElementById("signupError");
+  errEl.style.display = "none";
+
+  if (step === 1) {
+    const fullname = document.getElementById("su_fullname").value.trim();
+    const username = document.getElementById("su_username").value.trim();
+    if (!fullname) { showSignupError("Please enter your full name."); return; }
+    if (!username || username.length < 3) { showSignupError("Username must be at least 3 characters."); return; }
+    if (/\s/.test(username)) { showSignupError("Username cannot contain spaces."); return; }
+    signupData.fullname = fullname;
+    signupData.username = username;
+    signupData.email    = document.getElementById("su_email").value.trim();
+    signupData.phone    = document.getElementById("su_phone").value.trim();
+    signupGoToStep(2);
+  } else if (step === 2) {
+    const income = document.getElementById("su_income").value.trim();
+    const source = document.getElementById("su_income_source").value;
+    if (!income || parseFloat(income) < 0) { showSignupError("Please enter a valid monthly income."); return; }
+    if (!source) { showSignupError("Please select your income source."); return; }
+    signupData.monthly_income  = parseFloat(income);
+    signupData.income_source   = source;
+    signupData.monthly_budget  = parseFloat(document.getElementById("su_budget").value) || 0;
+    signupData.savings_goal    = parseFloat(document.getElementById("su_savings_goal").value) || 0;
+    signupGoToStep(3);
+  }
+}
+
+function signupBack(step) {
+  signupGoToStep(step - 1);
+}
+
+function showSignupError(msg) {
+  const el = document.getElementById("signupError");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function togglePw(id, btn) {
+  const input = document.getElementById(id);
+  const isText = input.type === "text";
+  input.type = isText ? "password" : "text";
+  btn.style.color = isText ? "" : "var(--blue)";
+}
+
+function checkPasswordStrength() {
+  const pw = document.getElementById("su_password").value;
+  const bar = document.getElementById("pwBar");
+  const label = document.getElementById("pwLabel");
+  const wrap = document.getElementById("pwStrength");
+  if (!pw) { wrap.style.display = "none"; return; }
+  wrap.style.display = "flex";
+  let score = 0;
+  if (pw.length >= 6) score++;
+  if (pw.length >= 10) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const levels = [
+    { pct: "20%", color: "#f04438", text: "Very Weak" },
+    { pct: "40%", color: "#f79009", text: "Weak" },
+    { pct: "60%", color: "#f59e0b", text: "Fair" },
+    { pct: "80%", color: "#12b76a", text: "Strong" },
+    { pct: "100%", color: "#027a48", text: "Very Strong" },
+  ];
+  const lv = levels[Math.min(score, 4)];
+  bar.style.width = lv.pct;
+  bar.style.background = lv.color;
+  label.textContent = lv.text;
+  label.style.color = lv.color;
+}
+
+async function submitSignup() {
+  const password = document.getElementById("su_password").value;
+  const confirm  = document.getElementById("su_confirm_password").value;
+  const currency = document.getElementById("su_currency").value;
+
+  if (!password || password.length < 4) { showSignupError("Password must be at least 4 characters."); return; }
+  if (password !== confirm) { showSignupError("Passwords do not match."); return; }
+
+  signupData.password = password;
+  signupData.currency = currency;
+
+  const btn     = document.getElementById("signupSubmitBtn");
+  const btnText = document.getElementById("signupSubmitText");
+  btn.disabled  = true;
+  btnText.textContent = "Creating…";
+
+  try {
+    const res  = await fetch("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signupData)
+    });
+    const data = await res.json();
+    if (res.ok && data.status === "ok") {
+      const successEl = document.getElementById("signupSuccess");
+      successEl.textContent = "Account created successfully! Signing you in…";
+      successEl.style.display = "block";
+      setTimeout(() => {
+        currentUser = signupData.username;
+        document.getElementById("navUsername").textContent = signupData.username;
+        document.getElementById("userAvatar").textContent  = signupData.username.charAt(0).toUpperCase();
+        setGreeting();
+        document.getElementById("signupPage").style.display = "none";
+        document.getElementById("appPage").style.display    = "block";
+        loadData();
+      }, 1200);
+    } else {
+      showSignupError(data.detail || "Registration failed. Please try again.");
+    }
+  } catch(e) {
+    showSignupError("Server error. Make sure backend is running.");
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = "Create Account";
+  }
+}
+
 /* ─── LOGIN ──────────────────────────────────────── */
 async function login() {
   const username = document.getElementById("username").value.trim();
