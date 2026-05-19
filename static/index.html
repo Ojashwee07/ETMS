@@ -59,7 +59,198 @@
           <span id="loginBtnText">Sign In</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
-        <p class="auth-note">New user? A new username & password will <strong>auto-register</strong> your account.</p>
+        <p class="auth-note">New user? <a href="#" class="auth-link" onclick="showSignup()">Create a full account</a> or just enter a new username & password to <strong>auto-register</strong>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SIGNUP PAGE ── -->
+  <div id="signupPage" class="auth-wrapper" style="display:none">
+    <div class="auth-left">
+      <div class="auth-brand">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+            <path d="M7 18l4-5 3 3 5-7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="brand-name">ETMS</span>
+      </div>
+      <div class="auth-hero">
+        <h1 class="auth-headline">Start your<br/><em>financial</em><br/>journey today.</h1>
+        <p class="auth-caption">Set up your profile and income details to get personalized AI-powered insights.</p>
+        <div class="auth-features">
+          <div class="feature-item"><div class="feature-dot green"></div><span>Personalized financial dashboard</span></div>
+          <div class="feature-item"><div class="feature-dot blue"></div><span>AI spending analysis & tips</span></div>
+          <div class="feature-item"><div class="feature-dot red"></div><span>Monthly reports & insights</span></div>
+        </div>
+      </div>
+      <div class="auth-footer">© 2026 ETMS. Built with FastAPI + MongoDB + Gemini AI</div>
+    </div>
+    <div class="auth-right signup-right">
+      <div class="auth-card signup-card">
+        <div class="auth-card-header">
+          <h2>Create Account 🚀</h2>
+          <p>Fill in your details to get started</p>
+        </div>
+        <div id="signupError" class="alert alert-error" style="display:none"></div>
+        <div id="signupSuccess" class="alert alert-success" style="display:none"></div>
+
+        <!-- Step indicators -->
+        <div class="signup-steps">
+          <div class="step-item active" id="step1Ind">
+            <div class="step-circle">1</div>
+            <span>Personal</span>
+          </div>
+          <div class="step-line"></div>
+          <div class="step-item" id="step2Ind">
+            <div class="step-circle">2</div>
+            <span>Financial</span>
+          </div>
+          <div class="step-line"></div>
+          <div class="step-item" id="step3Ind">
+            <div class="step-circle">3</div>
+            <span>Security</span>
+          </div>
+        </div>
+
+        <!-- Step 1: Personal Info -->
+        <div id="signupStep1">
+          <div class="form-group">
+            <label>Full Name</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              <input id="su_fullname" type="text" placeholder="e.g. Rahul Sharma" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <input id="su_username" type="text" placeholder="Choose a unique username" />
+            </div>
+            <span class="field-hint">Min 3 characters, no spaces</span>
+          </div>
+          <div class="form-group">
+            <label>Email Address <span class="optional-tag">(optional)</span></label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <input id="su_email" type="email" placeholder="you@example.com" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Phone Number <span class="optional-tag">(optional)</span></label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 10.8 19.79 19.79 0 01.22 2.18 2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.16 6.16l1.07-1.07a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+              <input id="su_phone" type="tel" placeholder="+91 98765 43210" />
+            </div>
+          </div>
+          <button class="btn-primary full" onclick="signupNext(1)">
+            Continue <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
+        <!-- Step 2: Financial Info -->
+        <div id="signupStep2" style="display:none">
+          <div class="form-group">
+            <label>Monthly Income (₹)</label>
+            <div class="input-wrap prefix-wrap">
+              <span class="input-prefix">₹</span>
+              <input id="su_income" type="number" placeholder="e.g. 50000" min="0" />
+            </div>
+            <span class="field-hint">Your average monthly take-home salary or income</span>
+          </div>
+          <div class="form-group">
+            <label>Primary Income Source</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+              <select id="su_income_source" class="input-select">
+                <option value="">Select income source</option>
+                <option value="Salary">Salaried Employee</option>
+                <option value="Business">Business / Self-employed</option>
+                <option value="Freelance">Freelancer</option>
+                <option value="Student">Student</option>
+                <option value="Investment">Investment / Passive Income</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Monthly Budget Goal (₹) <span class="optional-tag">(optional)</span></label>
+            <div class="input-wrap prefix-wrap">
+              <span class="input-prefix">₹</span>
+              <input id="su_budget" type="number" placeholder="e.g. 30000" min="0" />
+            </div>
+            <span class="field-hint">Max amount you want to spend per month</span>
+          </div>
+          <div class="form-group">
+            <label>Savings Goal (₹) <span class="optional-tag">(optional)</span></label>
+            <div class="input-wrap prefix-wrap">
+              <span class="input-prefix">₹</span>
+              <input id="su_savings_goal" type="number" placeholder="e.g. 10000" min="0" />
+            </div>
+            <span class="field-hint">How much you want to save each month</span>
+          </div>
+          <div class="signup-btn-row">
+            <button class="btn-outline" onclick="signupBack(2)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back
+            </button>
+            <button class="btn-primary" onclick="signupNext(2)">
+              Continue <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: Security -->
+        <div id="signupStep3" style="display:none">
+          <div class="form-group">
+            <label>Password</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              <input id="su_password" type="password" placeholder="Create a strong password" oninput="checkPasswordStrength()" />
+              <button class="toggle-pw" onclick="togglePw('su_password', this)" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div class="pw-strength" id="pwStrength" style="display:none">
+              <div class="pw-bar"><div id="pwBar" class="pw-fill"></div></div>
+              <span id="pwLabel" class="pw-label"></span>
+            </div>
+            <span class="field-hint">Min 4 characters</span>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <input id="su_confirm_password" type="password" placeholder="Confirm your password" />
+              <button class="toggle-pw" onclick="togglePw('su_confirm_password', this)" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Currency Preference</label>
+            <div class="input-wrap">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              <select id="su_currency" class="input-select">
+                <option value="INR">₹ Indian Rupee (INR)</option>
+                <option value="USD">$ US Dollar (USD)</option>
+                <option value="EUR">€ Euro (EUR)</option>
+                <option value="GBP">£ British Pound (GBP)</option>
+              </select>
+            </div>
+          </div>
+          <div class="signup-btn-row">
+            <button class="btn-outline" onclick="signupBack(3)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back
+            </button>
+            <button class="btn-primary" id="signupSubmitBtn" onclick="submitSignup()">
+              <span id="signupSubmitText">Create Account</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <p class="auth-note" style="margin-top:20px">Already have an account? <a href="#" class="auth-link" onclick="showLogin()">Sign in here</a></p>
       </div>
     </div>
   </div>
