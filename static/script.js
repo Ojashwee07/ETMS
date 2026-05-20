@@ -193,8 +193,10 @@ function logout() {
 function showSection(section, btn) {
   document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
-  document.getElementById("dashboardSection").style.display = section==="dashboard" ? "block" : "none";
-  document.getElementById("reportSection").style.display    = section==="report"    ? "block" : "none";
+  document.getElementById("dashboardSection").style.display = section === "dashboard" ? "block" : "none";
+  document.getElementById("reportSection").style.display    = section === "report"    ? "block" : "none";
+  document.getElementById("targetsSection").style.display   = section === "targets"   ? "block" : "none";
+  if (section === "targets") loadTargets();
 }
 
 /* ─── TYPE TOGGLE ────────────────────────────────── */
@@ -346,6 +348,9 @@ function setGreeting() {
   const now=new Date();
   document.getElementById("greetingDate").textContent=now.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
   document.getElementById("monthBadge").textContent=now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  // also set target month badge
+  const tmb = document.getElementById("targetMonthBadge");
+  if (tmb) tmb.textContent = now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
   const sel=document.getElementById("reportMonth");
   if(sel) sel.value=String(now.getMonth()+1);
 }
@@ -540,6 +545,221 @@ function renderCategoryTable(cats, totalExpense) {
     </div>`;
   }).join("");
   div.innerHTML=rows;
+}
+
+/* ─── TARGETS ────────────────────────────────────── */
+let currentTargetType = "savings";
+
+function setTargetType(type) {
+  currentTargetType = type;
+  const sBtn    = document.getElementById("tgtSavingsBtn");
+  const lBtn    = document.getElementById("tgtSpendingBtn");
+  const addBtn  = document.getElementById("tgtAddBtn");
+  const addText = document.getElementById("tgtAddBtnText");
+  if (type === "savings") {
+    sBtn.className = "type-btn income-active";
+    lBtn.className = "type-btn";
+    addBtn.className = "btn-primary full";
+    addText.textContent = "Add Saving Goal";
+  } else {
+    lBtn.className = "type-btn expense-active";
+    sBtn.className = "type-btn";
+    addBtn.className = "btn-primary full expense-mode";
+    addText.textContent = "Add Spending Limit";
+  }
+}
+
+async function addTarget() {
+  const name     = document.getElementById("tgtName").value.trim();
+  const category = document.getElementById("tgtCategory").value.trim();
+  const rawAmt   = document.getElementById("tgtAmount").value;
+  const amount   = parseFloat(rawAmt);
+  const btn      = document.getElementById("tgtAddBtn");
+  const btnText  = document.getElementById("tgtAddBtnText");
+
+  if (!name)              { showTgtAlert("error", "Please enter a target name."); return; }
+  if (!category)          { showTgtAlert("error", "Please enter a category (or 'All')."); return; }
+  if (!rawAmt || amount <= 0 || isNaN(amount)) { showTgtAlert("error", "Please enter a valid amount."); return; }
+
+  const label = btnText.textContent;
+  btn.disabled = true; btnText.textContent = "Adding…";
+  try {
+    const res = await fetch("/targets/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user: currentUser,
+        target_name: name,
+        target_type: currentTargetType,
+        category,
+        amount
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed to add target");
+    document.getElementById("tgtName").value     = "";
+    document.getElementById("tgtCategory").value = "";
+    document.getElementById("tgtAmount").value   = "";
+    showTgtAlert("success", `"${name}" target added!`);
+    loadTargets();
+  } catch(e) {
+    showTgtAlert("error", e.message);
+  } finally {
+    btn.disabled = false; btnText.textContent = label;
+  }
+}
+
+function showTgtAlert(type, msg) {
+  const el = document.getElementById("tgtAlert");
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => { el.style.display = "none"; }, 3500);
+}
+
+async function loadTargets() {
+  try {
+    const res  = await fetch(`/targets?user=${currentUser}`);
+    const data = await res.json();
+    renderTargets(data);
+  } catch(e) {
+    console.error("Targets load failed:", e);
+  }
+}
+
+function renderTargets(targets) {
+  const listEl   = document.getElementById("tgtList");
+  const emptyEl  = document.getElementById("tgtEmptyState");
+  const statGrid = document.getElementById("tgtStatGrid");
+  listEl.innerHTML = "";
+
+  if (!targets || targets.length === 0) {
+    emptyEl.style.display = "flex";
+    statGrid.style.display = "none";
+    return;
+  }
+
+  emptyEl.style.display  = "none";
+  statGrid.style.display = "grid";
+
+  // Compute summary stats
+  const savingsTargets  = targets.filter(t => t.target_type === "savings");
+  const spendingTargets = targets.filter(t => t.target_type === "spending_limit");
+  const totalSavingsAmt  = savingsTargets.reduce((s, t) => s + t.amount, 0);
+  const totalSpendingAmt = spendingTargets.reduce((s, t) => s + t.amount, 0);
+
+  document.getElementById("tgt-total-count").textContent    = targets.length;
+  document.getElementById("tgt-active-badge").textContent   = `${targets.length} active`;
+  document.getElementById("tgt-savings-count").textContent  = savingsTargets.length;
+  document.getElementById("tgt-savings-badge").textContent  = `₹${totalSavingsAmt.toLocaleString("en-IN", {maximumFractionDigits:0})} target`;
+  document.getElementById("tgt-spending-count").textContent = spendingTargets.length;
+  document.getElementById("tgt-spending-badge").textContent = `₹${totalSpendingAmt.toLocaleString("en-IN", {maximumFractionDigits:0})} limit`;
+
+  targets.forEach((t, i) => {
+    const isSaving  = t.target_type === "savings";
+    const pct       = t.pct       || 0;
+    const progress  = t.progress  || 0;
+    const remaining = Math.max(0, t.amount - progress);
+    const isOver    = progress > t.amount;
+
+    const accentColor = isSaving
+      ? (pct >= 100 ? "var(--green)"  : "var(--blue)")
+      : (isOver     ? "var(--red)"    : pct >= 80 ? "var(--amber)" : "var(--green)");
+
+    const barGradient = isSaving
+      ? (pct >= 100
+          ? "linear-gradient(90deg,#6ee7b7,var(--green))"
+          : "linear-gradient(90deg,#93c5fd,var(--blue))")
+      : (isOver
+          ? "linear-gradient(90deg,#fda29b,var(--red))"
+          : pct >= 80
+            ? "linear-gradient(90deg,#fde68a,var(--amber))"
+            : "linear-gradient(90deg,#6ee7b7,var(--green))");
+
+    const statusText = isSaving
+      ? (pct >= 100
+          ? "🎉 Goal reached!"
+          : `₹${remaining.toLocaleString("en-IN",{maximumFractionDigits:0})} left to save`)
+      : (isOver
+          ? `⚠️ ₹${(progress - t.amount).toLocaleString("en-IN",{maximumFractionDigits:0})} over limit`
+          : `₹${remaining.toLocaleString("en-IN",{maximumFractionDigits:0})} remaining`);
+
+    const typeBg    = isSaving ? "var(--blue-light)"  : "var(--red-light)";
+    const typeColor = isSaving ? "var(--blue)"         : "var(--red)";
+    const typeLabel = isSaving ? "Saving Goal"         : "Spending Limit";
+
+    const r    = 20;
+    const circ = 2 * Math.PI * r;
+    const dash = ((Math.min(pct, 100) / 100) * circ).toFixed(1);
+
+    const card = document.createElement("div");
+    card.className = "card tgt-card";
+    card.style.animationDelay = `${i * 0.07}s`;
+    card.innerHTML = `
+      <div class="tgt-card-inner">
+        <div class="tgt-card-top">
+          <div class="tgt-card-left">
+            <span class="tgt-type-badge" style="background:${typeBg};color:${typeColor}">${typeLabel}</span>
+            <h3 class="tgt-name">${escapeHtml(t.target_name)}</h3>
+            <span class="tgt-meta-row">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/></svg>
+              ${escapeHtml(t.category)}
+              <span class="tgt-meta-sep">·</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              ${escapeHtml(t.created_at || "")}
+            </span>
+          </div>
+          <div class="tgt-card-right">
+            <svg class="tgt-ring" width="56" height="56" viewBox="0 0 56 56">
+              <circle cx="28" cy="28" r="${r}" fill="none" stroke="var(--gray-100)" stroke-width="5"/>
+              <circle cx="28" cy="28" r="${r}" fill="none"
+                stroke="${accentColor}" stroke-width="5"
+                stroke-dasharray="${dash} ${circ}"
+                stroke-dashoffset="0"
+                stroke-linecap="round"
+                transform="rotate(-90 28 28)"
+                style="transition:stroke-dasharray 1s cubic-bezier(.4,0,.2,1)"/>
+              <text x="28" y="33" text-anchor="middle"
+                font-size="9" font-weight="700"
+                font-family="'JetBrains Mono',monospace"
+                fill="${accentColor}">${pct}%</text>
+            </svg>
+            <button class="btn-delete" onclick="deleteTarget('${t.id}', this)" title="Delete target">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="tgt-progress-wrap">
+          <div class="tgt-progress-track">
+            <div class="tgt-progress-fill" style="width:${Math.min(pct,100)}%;background:${barGradient}"></div>
+          </div>
+        </div>
+        <div class="tgt-card-bottom">
+          <div class="tgt-amounts">
+            <span class="tgt-current" style="font-family:var(--font-mono)">
+              ₹${progress.toLocaleString("en-IN",{maximumFractionDigits:0})}
+              <span style="color:var(--gray-400);font-weight:400"> / </span>
+              ₹${t.amount.toLocaleString("en-IN",{maximumFractionDigits:0})}
+            </span>
+          </div>
+          <span class="tgt-status" style="color:${accentColor}">${statusText}</span>
+        </div>
+      </div>`;
+    listEl.appendChild(card);
+  });
+}
+
+async function deleteTarget(id, btn) {
+  if (!confirm("Delete this target?")) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/targets/${id}?user=${currentUser}`, { method: "DELETE" });
+    if (res.ok) {
+      const card = btn.closest(".tgt-card");
+      card.style.cssText = "opacity:0;transform:translateX(24px);transition:all 0.25s ease";
+      setTimeout(() => { card.remove(); loadTargets(); }, 260);
+    } else { alert("Could not delete target."); btn.disabled = false; }
+  } catch(e) { alert("Server error."); btn.disabled = false; }
 }
 
 /* ─── UTILS ──────────────────────────────────────── */
