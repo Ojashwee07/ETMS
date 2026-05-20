@@ -800,6 +800,7 @@ body {
   .stat-grid { grid-template-columns: 1fr; }
 }
 
+
 @media (max-width: 768px) {
   .auth-left { display: none; }
   .auth-right { width: 100%; }
@@ -807,6 +808,170 @@ body {
   .navbar { padding: 0 16px; }
   .nav-user .user-name { display: none; }
   .auth-headline { font-size: 2rem; }
+}
+
+/* ─── DOWNLOAD BUTTON ────────────────────────────── */
+.btn-download {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.8rem; font-weight: 700;
+  font-family: var(--font);
+  color: var(--purple);
+  background: var(--purple-light);
+  border: 1.5px solid rgba(124,58,237,0.25);
+  border-radius: var(--radius-md);
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-download:hover {
+  background: var(--purple);
+  color: white;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+  transform: translateY(-1px);
+}
+.btn-download:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
+
+/* ═══════════════════════════════════════════════════════
+   ─── TARGETS SECTION ─────────────────────────────────
+   ═══════════════════════════════════════════════════════ */
+
+.tgt-form-card { overflow: visible; }
+
+.tgt-form-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.tgt-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 0.76rem;
+  color: var(--gray-400);
+  line-height: 1.55;
+}
+.tgt-hint svg { flex-shrink: 0; margin-top: 1px; }
+
+/* ── Target card ───────────────────────────────────── */
+.tgt-card {
+  animation: fadeUp 0.4s ease both;
+  transition: box-shadow 0.25s, transform 0.25s;
+  overflow: visible;
+}
+.tgt-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.tgt-card-inner { padding: 18px 22px 16px; }
+
+.tgt-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+
+.tgt-card-left {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tgt-type-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.71rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+.tgt-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.tgt-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 0.76rem;
+  color: var(--gray-400);
+  font-weight: 500;
+}
+.tgt-meta-sep { color: var(--gray-300); }
+
+.tgt-card-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.tgt-ring { display: block; flex-shrink: 0; }
+
+/* ── Progress bar ───────────────────────────────────── */
+.tgt-progress-wrap { margin-bottom: 12px; }
+
+.tgt-progress-track {
+  height: 8px;
+  background: var(--gray-100);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.tgt-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+}
+
+/* ── Bottom row ─────────────────────────────────────── */
+.tgt-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tgt-amounts { display: flex; align-items: baseline; gap: 4px; }
+
+.tgt-current {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--gray-700);
+}
+
+.tgt-status {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Responsive tweaks ──────────────────────────────── */
+@media (max-width: 900px) {
+  .tgt-card-bottom { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 768px) {
+  .tgt-name { font-size: 0.92rem; }
+  .tgt-ring { width: 44px; height: 44px; }
 }
 
 /* ─── NAV TABS ───────────────────────────────────── */
