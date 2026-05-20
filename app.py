@@ -16,8 +16,9 @@ app = FastAPI(title="ETMS - Expense Tracker Management System")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 client    = MongoClient(MONGO_URI)
 db        = client["etms_db"]
-users_col = db["users"]
-txns_col  = db["transactions"]
+users_col   = db["users"]
+txns_col    = db["transactions"]
+targets_col = db["targets"]
 
 genai.configure(api_key="AIzaSyDKH9WAOyZWcB0Yn-NxryiFuCXtUNGAAcw")
 gemini = genai.GenerativeModel("gemini-1.5-flash")
@@ -78,6 +79,37 @@ class ReportRequest(BaseModel):
     user: str
     month: int
     year: int
+
+class Target(BaseModel):
+    user: str
+    target_name: str
+    target_type: str   # "savings" | "spending_limit"
+    category: str
+    amount: float
+
+    @validator("target_name")
+    def tn(cls, v):
+        v = v.strip()
+        if not v: raise ValueError("Target name required")
+        if len(v) < 2: raise ValueError("Min 2 characters")
+        return v
+
+    @validator("target_type")
+    def tt(cls, v):
+        if v not in ("savings", "spending_limit"):
+            raise ValueError("Type must be savings or spending_limit")
+        return v
+
+    @validator("category")
+    def cat(cls, v):
+        v = v.strip()
+        if not v: raise ValueError("Category required")
+        return v
+
+    @validator("amount")
+    def amt(cls, v):
+        if v <= 0: raise ValueError("Amount must be positive")
+        return v
 
 # ── POST /login ─────────────────────────────────────────
 @app.post("/login")
@@ -313,5 +345,63 @@ Use Rs. for currency, be specific with numbers, use emojis, friendly tone."""
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+# ── POST /targets/add ────────────────────────────────────
+@app.post("/targets/add")
+def add_target(t: Target):
+    tid = str(uuid.uuid4())
+    targets_col.insert_one({
+        "id": tid,
+        "user": t.user,
+        "target_name": t.target_name,
+        "target_type": t.target_type,
+        "category": t.category,
+        "amount": t.amount,
+        "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
+    })
+    return {"status": "ok", "id": tid}
+
+# ── GET /targets ──────────────────────────────────────────
+@app.get("/targets")
+def get_targets(user: str):
+    if not user: raise HTTPException(status_code=400, detail="User required")
+    docs = list(targets_col.find({"user": user}, {"_id": 0}))
+
+    # Compute progress from current month's transactions
+    txns = list(txns_col.find({"user": user}, {"_id": 0}))
+    now  = datetime.now()
+
+    for tgt in docs:
+        cat = tgt["category"].lower().strip()
+        spent  = 0.0
+        earned = 0.0
+        for tx in txns:
+            try:
+                dt = datetime.strptime(tx["created_at"], "%d %b %Y, %I:%M %p")
+                if dt.month != now.month or dt.year != now.year:
+                    continue
+            except:
+                continue
+            tx_cat = tx["category"].split(" — ")[0].lower().strip()
+            amt    = float(tx["amount"])
+            # Match: "all" matches everything; otherwise match if tx category contains target category
+            if cat == "all" or tx_cat == cat or cat in tx_cat or tx_cat in cat:
+                if amt < 0:
+                    spent  += abs(amt)
+                else:
+                    earned += amt
+
+        tgt["progress"] = round(spent if tgt["target_type"] == "spending_limit" else earned, 2)
+        tgt["pct"]      = min(100, round((tgt["progress"] / tgt["amount"]) * 100, 1)) if tgt["amount"] > 0 else 0
+
+    return docs
+
+# ── DELETE /targets/{id} ──────────────────────────────────
+@app.delete("/targets/{target_id}")
+def delete_target(target_id: str, user: str):
+    result = targets_col.delete_one({"id": target_id, "user": user})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Target not found")
+    return {"status": "ok"}
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
