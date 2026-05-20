@@ -270,6 +270,7 @@
         <div class="nav-tabs">
           <button class="nav-tab active" onclick="showSection('dashboard', this)">Dashboard</button>
           <button class="nav-tab" onclick="showSection('report', this)">📊 Monthly Report</button>
+          <button class="nav-tab" onclick="showSection('targets', this)">🎯 Targets</button>
         </div>
       </div>
       <div class="nav-right">
@@ -598,6 +599,137 @@
           <span>Add some transactions first, then generate a report</span>
         </div>
 
+      </main>
+    </div>
+
+    <!-- ── TARGETS SECTION ── -->
+    <div id="targetsSection" style="display:none">
+      <main class="main-content">
+
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">🎯 Targets</h1>
+            <p class="page-sub">Monthly saving goals and spending limits — tracked live</p>
+          </div>
+          <div class="month-chip" id="targetMonthBadge"></div>
+        </div>
+
+        <!-- Target Summary Stats -->
+        <div class="stat-grid" id="tgtStatGrid" style="display:none; margin-bottom:28px">
+          <div class="stat-card stat-balance">
+            <div class="stat-icon balance-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Total Targets</span>
+              <span class="stat-value balance-color" id="tgt-total-count">0</span>
+            </div>
+            <div class="stat-badge income-badge" id="tgt-active-badge">0 active</div>
+          </div>
+          <div class="stat-card stat-income">
+            <div class="stat-icon income-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Saving Goals</span>
+              <span class="stat-value income-color" id="tgt-savings-count">0</span>
+            </div>
+            <div class="stat-badge income-badge" id="tgt-savings-badge">₹0 target</div>
+          </div>
+          <div class="stat-card stat-expense">
+            <div class="stat-icon expense-bg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/><polyline points="17,18 23,18 23,12"/></svg>
+            </div>
+            <div class="stat-body">
+              <span class="stat-label">Spending Limits</span>
+              <span class="stat-value expense-color" id="tgt-spending-count">0</span>
+            </div>
+            <div class="stat-badge expense-badge" id="tgt-spending-badge">₹0 limit</div>
+          </div>
+        </div>
+
+        <!-- Two Column: Form + List -->
+        <div class="two-col" style="align-items:start">
+
+          <!-- Add Target Panel -->
+          <div class="card tgt-form-card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                New Target
+              </h2>
+            </div>
+            <div class="tgt-form-body">
+
+              <!-- Target Type Toggle -->
+              <div class="form-group">
+                <label>Target Type</label>
+                <div class="type-toggle" style="margin-bottom:0">
+                  <button class="type-btn income-active" id="tgtSavingsBtn" onclick="setTargetType('savings')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+                    Saving Goal
+                  </button>
+                  <button class="type-btn" id="tgtSpendingBtn" onclick="setTargetType('spending_limit')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6,9 12,15 18,9"/></svg>
+                    Spending Limit
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Target Name</label>
+                <div class="input-wrap">
+                  <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                  <input id="tgtName" type="text" placeholder="e.g. Save for Phone, Food Budget…" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Category <span class="optional-tag">(type "All" to track everything)</span></label>
+                <div class="input-wrap">
+                  <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  <input id="tgtCategory" type="text" placeholder="e.g. Groceries, Salary, All" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Target Amount (₹)</label>
+                <div class="input-wrap prefix-wrap">
+                  <span class="input-prefix">₹</span>
+                  <input id="tgtAmount" type="number" placeholder="0.00" min="1" step="0.01" />
+                </div>
+              </div>
+
+              <div id="tgtAlert" class="alert" style="display:none; margin-bottom:14px"></div>
+
+              <button class="btn-primary full" id="tgtAddBtn" onclick="addTarget()">
+                <span id="tgtAddBtnText">Add Saving Goal</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+
+              <div class="tgt-hint">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                Progress is calculated from this month's transactions matching the category.
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Targets List -->
+          <div>
+            <div id="tgtEmptyState" class="card" style="display:flex">
+              <div class="empty-state" style="padding:56px 24px; width:100%">
+                <div class="empty-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                </div>
+                <p>No targets yet</p>
+                <span>Add your first saving goal or spending limit to get started</span>
+              </div>
+            </div>
+            <div id="tgtList" style="display:flex; flex-direction:column; gap:14px"></div>
+          </div>
+
+        </div>
       </main>
     </div>
 
