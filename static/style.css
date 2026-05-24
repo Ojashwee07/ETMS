@@ -1224,3 +1224,156 @@ body {
   .signup-right { padding: 24px 20px; }
   .signup-btn-row { flex-direction: column-reverse; }
 }
+
+/* ─── IMPROVED REPORT SECTION ───────────────────────── */
+
+/* KPI Grid */
+.report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.kpi-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+  border: 1.5px solid var(--gray-100);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.kpi-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.kpi-income .kpi-icon { background: var(--green-light); color: var(--green); }
+.kpi-expense .kpi-icon { background: var(--red-light);   color: var(--red); }
+.kpi-savings .kpi-icon { background: var(--blue-light);  color: var(--blue); }
+.kpi-txns   .kpi-icon { background: var(--purple-light); color: var(--purple); }
+.kpi-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi-label { font-size: 0.78rem; font-weight: 600; color: var(--gray-500); letter-spacing: 0.01em; }
+.kpi-value { font-size: 1.35rem; font-weight: 800; color: var(--gray-900); letter-spacing: -0.02em; }
+.kpi-income .kpi-value { color: var(--green); }
+.kpi-expense .kpi-value { color: var(--red); }
+.kpi-savings .kpi-value { color: var(--blue); }
+.kpi-txns   .kpi-value { color: var(--purple); }
+.kpi-sub { font-size: 0.75rem; color: var(--gray-400); }
+
+/* Savings Progress */
+.savings-progress-card { padding: 20px 24px; }
+.savings-progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.savings-rate-big { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
+.savings-progress-bar-wrap { margin-bottom: 8px; }
+.savings-progress-track { width: 100%; height: 10px; background: var(--gray-100); border-radius: 99px; overflow: hidden; }
+.savings-progress-fill { height: 100%; border-radius: 99px; transition: width 0.8s ease, background 0.3s; }
+.savings-progress-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--gray-400); }
+
+/* Chart badge */
+.chart-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  padding: 3px 10px;
+  border-radius: 99px;
+}
+
+/* Complete Report Button */
+.btn-complete-report {
+  background: linear-gradient(135deg, #1d2939, #344054) !important;
+  color: white !important;
+  border: none !important;
+}
+.btn-complete-report:hover { opacity: 0.9; }
+
+/* Download Button */
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--font);
+  color: var(--blue);
+  background: var(--blue-light);
+  border: 1.5px solid var(--blue);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-download:hover { background: var(--blue); color: white; }
+
+/* Complete Report Content */
+.complete-report-card { border: 2px solid var(--gray-100); }
+.complete-report-content { padding: 24px; line-height: 1.8; color: var(--gray-700); }
+.complete-report-content .cr-heading {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--gray-900);
+  margin: 28px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--gray-100);
+}
+.complete-report-content .cr-subheading {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--blue);
+  margin: 18px 0 8px;
+}
+.complete-report-content .cr-list-item {
+  padding: 6px 0 6px 16px;
+  border-left: 3px solid var(--blue-light);
+  margin: 6px 0;
+}
+.complete-report-content .cr-bullet {
+  padding: 4px 0 4px 20px;
+  position: relative;
+  margin: 4px 0;
+}
+.complete-report-content .cr-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 6px;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+/* Behaviour Insights */
+.behaviour-card { padding: 0; }
+.behaviour-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+.behaviour-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--gray-100);
+  border-right: 1px solid var(--gray-100);
+}
+.behaviour-item:nth-child(2n) { border-right: none; }
+.behaviour-item:nth-last-child(-n+2) { border-bottom: none; }
+.beh-icon {
+  width: 44px; height: 44px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.beh-body { display: flex; flex-direction: column; gap: 2px; }
+.beh-title { font-size: 0.78rem; font-weight: 600; color: var(--gray-500); }
+.beh-value { font-size: 0.95rem; font-weight: 700; }
+.beh-desc  { font-size: 0.78rem; color: var(--gray-400); }
+
+@media (max-width: 900px) {
+  .report-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .behaviour-grid  { grid-template-columns: 1fr; }
+  .behaviour-item  { border-right: none; }
+}
+@media (max-width: 600px) {
+  .report-kpi-grid { grid-template-columns: 1fr; }
+}
