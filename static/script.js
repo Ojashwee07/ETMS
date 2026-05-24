@@ -425,46 +425,227 @@ async function analyzeSpending() {
 }
 
 /* ─── MONTHLY REPORT ─────────────────────────────── */
+let reportData = null;
+let incomeExpenseChart = null, incomeChart = null;
+
 async function loadReport() {
-  const month=parseInt(document.getElementById("reportMonth").value);
-  const year=parseInt(document.getElementById("reportYear").value);
-  const btn=document.getElementById("loadReportText");
-  btn.textContent="Loading…";
-  document.getElementById("reportStats").style.display="none";
-  document.getElementById("reportEmpty").style.display="none";
+  const month = parseInt(document.getElementById("reportMonth").value);
+  const year  = parseInt(document.getElementById("reportYear").value);
+  const btn   = document.getElementById("loadReportText");
+  btn.textContent = "Loading…";
+  document.getElementById("reportStats").style.display  = "none";
+  document.getElementById("reportEmpty").style.display  = "none";
+  document.getElementById("completeReportResult").style.display = "none";
   try {
-    const res=await fetch(`/report/data?user=${currentUser}&month=${month}&year=${year}`);
-    const d=await res.json();
-    if(!res.ok) throw new Error(d.detail||"Failed");
-    if(d.total_txns===0){document.getElementById("reportEmpty").style.display="flex";return;}
-    document.getElementById("reportStats").style.display="block";
-    document.getElementById("rIncome").textContent  ="₹"+d.income.toLocaleString("en-IN");
-    document.getElementById("rExpense").textContent ="₹"+d.expense.toLocaleString("en-IN");
-    document.getElementById("rSavings").textContent ="₹"+d.savings.toLocaleString("en-IN");
-    document.getElementById("rSavingsRate").textContent=`${d.savings_rate}% saved`;
+    const res = await fetch(`/report/data?user=${currentUser}&month=${month}&year=${year}`);
+    const d   = await res.json();
+    if (!res.ok) throw new Error(d.detail || "Failed");
+    if (d.total_txns === 0) { document.getElementById("reportEmpty").style.display = "flex"; return; }
+    reportData = d;
+    document.getElementById("reportStats").style.display = "block";
+
+    // KPI cards
+    const incomeTxns  = d.income_categories.reduce((s,c) => s + 1, 0);
+    const expenseTxns = d.expense_categories.reduce((s,c) => s + 1, 0);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const avgPerDay   = d.expense > 0 ? Math.round(d.expense / daysInMonth) : 0;
+    document.getElementById("rIncome").textContent      = "₹" + d.income.toLocaleString("en-IN");
+    document.getElementById("rExpense").textContent     = "₹" + d.expense.toLocaleString("en-IN");
+    document.getElementById("rSavings").textContent     = "₹" + d.savings.toLocaleString("en-IN");
+    document.getElementById("rTxns").textContent        = d.total_txns;
+    document.getElementById("rIncomeTxns").textContent  = `${d.income_categories.length} source${d.income_categories.length !== 1 ? "s" : ""}`;
+    document.getElementById("rExpenseTxns").textContent = `${d.expense_categories.length} categor${d.expense_categories.length !== 1 ? "ies" : "y"}`;
+    document.getElementById("rSavingsRate").textContent = `${d.savings_rate}% of income saved`;
+    document.getElementById("rAvgExpense").textContent  = `₹${avgPerDay.toLocaleString("en-IN")} avg/day`;
+
+    // Savings bar
+    const pct = Math.min(100, d.savings_rate);
+    document.getElementById("rSavingsRateBig").textContent = d.savings_rate + "%";
+    document.getElementById("rSavingsRateBig").style.color = d.savings_rate >= 40 ? "var(--green)" : d.savings_rate >= 20 ? "var(--amber)" : "var(--red)";
+    document.getElementById("rSavingsBar").style.width     = pct + "%";
+    document.getElementById("rSavingsBar").style.background = d.savings_rate >= 40 ? "var(--green)" : d.savings_rate >= 20 ? "var(--amber)" : "var(--red)";
+
     renderCharts(d);
     renderCategoryTable(d.expense_categories, d.expense);
-  } catch(e){alert("Error: "+e.message);}
-  finally{btn.textContent="Load Charts";}
+    renderBehaviourInsights(d);
+  } catch(e) { alert("Error: " + e.message); }
+  finally { btn.textContent = "Load Charts"; }
 }
 
-async function generateAIReport() {
-  const month=parseInt(document.getElementById("reportMonth").value);
-  const year=parseInt(document.getElementById("reportYear").value);
-  const btn=document.getElementById("aiReportBtnText");
-  const resultDiv=document.getElementById("aiReportResult");
-  btn.textContent="Generating…";
-  document.getElementById("aiReportResult").style.display="none";
+async function generateCompleteReport() {
+  const month  = parseInt(document.getElementById("reportMonth").value);
+  const year   = parseInt(document.getElementById("reportYear").value);
+  const btn    = document.getElementById("completeReportBtnText");
+  const result = document.getElementById("completeReportResult");
+  btn.textContent = "Generating…";
+  document.getElementById("completeReportBtn").disabled = true;
+  result.style.display = "none";
+
+  // Load charts first if not loaded yet
+  if (document.getElementById("reportStats").style.display === "none") {
+    await loadReport();
+    if (document.getElementById("reportStats").style.display === "none") {
+      btn.textContent = "Generate Complete Report";
+      document.getElementById("completeReportBtn").disabled = false;
+      return;
+    }
+  }
+
   try {
-    const res=await fetch("/ai/report",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:currentUser,month,year})});
-    const data=await res.json();
-    if(!res.ok) throw new Error(data.detail||"Failed");
-    document.getElementById("reportMonthName").textContent=data.month;
-    document.getElementById("aiReportContent").innerHTML=formatMarkdown(data.report);
-    resultDiv.style.display="block";
-    resultDiv.scrollIntoView({behavior:"smooth",block:"start"});
-  } catch(e){alert("AI Error: "+e.message);}
-  finally{btn.textContent="Generate AI Report";}
+    const res  = await fetch("/ai/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: currentUser, month, year })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed");
+
+    document.getElementById("completeReportMonthName").textContent = data.month;
+    document.getElementById("completeReportContent").innerHTML = formatCompleteReport(data.report);
+
+    // Show download button
+    document.getElementById("downloadBtn").style.display = "inline-flex";
+
+    result.style.display = "block";
+    result.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch(e) {
+    alert("AI Error: " + e.message);
+  } finally {
+    btn.textContent = "Generate Complete Report";
+    document.getElementById("completeReportBtn").disabled = false;
+  }
+}
+
+function formatCompleteReport(text) {
+  return text
+    .replace(/^#{1,2}\s+(.+)$/gm, "<h3 class='cr-heading'>$1</h3>")
+    .replace(/^###\s+(.+)$/gm, "<h4 class='cr-subheading'>$1</h4>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^\d+\.\s+(.+)$/gm, "<div class='cr-list-item'><span class='cr-num'></span>$1</div>")
+    .replace(/^[-•]\s+(.+)$/gm, "<div class='cr-bullet'>$1</div>")
+    .replace(/\n\n/g, "<br/>")
+    .replace(/\n/g, "<br/>");
+}
+
+function renderBehaviourInsights(d) {
+  const section = document.getElementById("behaviourContent");
+  const rate    = d.savings_rate;
+  const topCat  = d.expense_categories[0];
+  const topPct  = topCat && d.expense > 0 ? ((topCat.amount / d.expense) * 100).toFixed(1) : 0;
+  const ratio   = d.income > 0 ? ((d.expense / d.income) * 100).toFixed(1) : 0;
+
+  const scoreColor = rate >= 40 ? "var(--green)" : rate >= 20 ? "var(--amber)" : "var(--red)";
+  const scoreLabel = rate >= 40 ? "Excellent Saver 🌟" : rate >= 20 ? "Good Progress 👍" : "Needs Improvement ⚠️";
+  const spendLabel = ratio <= 50 ? "Very Controlled 🎯" : ratio <= 70 ? "Moderate Spender 💡" : "High Spender 🚨";
+  const spendColor = ratio <= 50 ? "var(--green)" : ratio <= 70 ? "var(--amber)" : "var(--red)";
+
+  section.innerHTML = `
+    <div class="behaviour-item">
+      <div class="beh-icon" style="background:${scoreColor}20;color:${scoreColor}">💰</div>
+      <div class="beh-body">
+        <span class="beh-title">Savings Behaviour</span>
+        <span class="beh-value" style="color:${scoreColor}">${scoreLabel}</span>
+        <span class="beh-desc">You saved ${rate}% of your income this month</span>
+      </div>
+    </div>
+    <div class="behaviour-item">
+      <div class="beh-icon" style="background:${spendColor}20;color:${spendColor}">📊</div>
+      <div class="beh-body">
+        <span class="beh-title">Spending Ratio</span>
+        <span class="beh-value" style="color:${spendColor}">${spendLabel}</span>
+        <span class="beh-desc">You spent ${ratio}% of your income this month</span>
+      </div>
+    </div>
+    ${topCat ? `
+    <div class="behaviour-item">
+      <div class="beh-icon" style="background:var(--purple-light);color:var(--purple)">🏆</div>
+      <div class="beh-body">
+        <span class="beh-title">Top Expense Category</span>
+        <span class="beh-value" style="color:var(--purple)">${topCat.name}</span>
+        <span class="beh-desc">${topPct}% of total expenses — ₹${topCat.amount.toLocaleString("en-IN")}</span>
+      </div>
+    </div>` : ""}
+    <div class="behaviour-item">
+      <div class="beh-icon" style="background:var(--blue-light);color:var(--blue)">📅</div>
+      <div class="beh-body">
+        <span class="beh-title">Transaction Activity</span>
+        <span class="beh-value" style="color:var(--blue)">${d.total_txns} transactions</span>
+        <span class="beh-desc">${d.expense_categories.length} expense categories tracked</span>
+      </div>
+    </div>`;
+}
+
+/* ─── DOWNLOAD REPORT WITH CHARTS ───────────────── */
+async function downloadReport() {
+  const month  = parseInt(document.getElementById("reportMonth").value);
+  const year   = parseInt(document.getElementById("reportYear").value);
+  const btn    = document.getElementById("downloadBtn");
+  const aiText = document.getElementById("completeReportContent")?.innerText || "";
+
+  if (!reportData) {
+    alert("Please click 'Load Charts' first before downloading.");
+    return;
+  }
+
+  btn.disabled  = true;
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Building PDF…`;
+
+  try {
+    // ── Capture all charts as base64 PNG images ──
+    function captureChart(id) {
+      const canvas = document.getElementById(id);
+      if (!canvas) return "";
+      try { return canvas.toDataURL("image/png", 1.0).split(",")[1]; }
+      catch(e) { return ""; }
+    }
+
+    const charts = {
+      donut:          captureChart("doughnutChart"),
+      bar:            captureChart("barChart"),
+      line:           captureChart("lineChart"),
+      income_expense: captureChart("incomeExpenseChart"),
+      income_pie:     captureChart("incomeChart"),
+    };
+
+    // ── POST everything to backend ──
+    const payload = {
+      user:     currentUser,
+      month,
+      year,
+      ai_report: aiText,
+      charts,
+    };
+
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Generating PDF…`;
+
+    const res = await fetch("/report/pdf", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to generate PDF");
+    }
+
+    const blob   = await res.blob();
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement("a");
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    a.href       = url;
+    a.download   = `ETMS_Report_${months[month-1]}_${year}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+  } catch(e) {
+    alert("PDF Error: " + e.message);
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF`;
+  }
 }
 
 /* ─── CHARTS ─────────────────────────────────────── */
@@ -474,59 +655,104 @@ const COLORS = [
 ];
 
 function renderCharts(d) {
-  // Destroy old charts
   if(doughnutChart){doughnutChart.destroy();doughnutChart=null;}
   if(barChart){barChart.destroy();barChart=null;}
   if(lineChart){lineChart.destroy();lineChart=null;}
+  if(incomeExpenseChart){incomeExpenseChart.destroy();incomeExpenseChart=null;}
+  if(incomeChart){incomeChart.destroy();incomeChart=null;}
 
-  const expCats = d.expense_categories.slice(0,8);
-  const labels  = expCats.map(c=>c.name);
-  const amounts = expCats.map(c=>c.amount);
+  const expCats  = d.expense_categories.slice(0,8);
+  const labels   = expCats.map(c => c.name);
+  const amounts  = expCats.map(c => c.amount);
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { labels: { font: { size: 12, family: "Plus Jakarta Sans" }, padding: 14, boxWidth: 13 } } }
+  };
 
   // Doughnut
-  const dCtx=document.getElementById("doughnutChart").getContext("2d");
-  doughnutChart=new Chart(dCtx,{
-    type:"doughnut",
-    data:{labels,datasets:[{data:amounts,backgroundColor:COLORS,borderWidth:2,borderColor:"white"}]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{
-      legend:{position:"bottom",labels:{font:{size:11,family:"Plus Jakarta Sans"},padding:12,boxWidth:12}},
-      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ₹${ctx.parsed.toLocaleString("en-IN")}`}}
-    },cutout:"65%"}
+  const dCtx = document.getElementById("doughnutChart").getContext("2d");
+  doughnutChart = new Chart(dCtx, {
+    type: "doughnut",
+    data: { labels, datasets: [{ data: amounts, backgroundColor: COLORS, borderWidth: 3, borderColor: "white", hoverOffset: 8 }] },
+    options: { ...chartDefaults, cutout: "68%",
+      plugins: { ...chartDefaults.plugins,
+        legend: { position: "bottom", labels: { font: { size: 11, family: "Plus Jakarta Sans" }, padding: 12, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ₹${ctx.parsed.toLocaleString("en-IN")} (${d.expense > 0 ? ((ctx.parsed/d.expense)*100).toFixed(1) : 0}%)` } }
+      }
+    }
   });
 
   // Bar
-  const bCtx=document.getElementById("barChart").getContext("2d");
-  barChart=new Chart(bCtx,{
-    type:"bar",
-    data:{labels,datasets:[{label:"Expense (₹)",data:amounts,backgroundColor:COLORS,borderRadius:8,borderSkipped:false}]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{
-      legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`₹${ctx.parsed.y.toLocaleString("en-IN")}`}}
-    },scales:{
-      y:{beginAtZero:true,grid:{color:"#f2f4f7"},ticks:{callback:v=>"₹"+v.toLocaleString("en-IN"),font:{size:11}}},
-      x:{grid:{display:false},ticks:{font:{size:11}}}
-    }}
+  const bCtx = document.getElementById("barChart").getContext("2d");
+  barChart = new Chart(bCtx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Expense (₹)", data: amounts, backgroundColor: COLORS, borderRadius: 10, borderSkipped: false }] },
+    options: { ...chartDefaults, indexAxis: "y",
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.x.toLocaleString("en-IN")}` } } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: "#f2f4f7" }, ticks: { callback: v => "₹" + (v >= 1000 ? (v/1000).toFixed(0)+"K" : v), font: { size: 11 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
   });
 
   // Line
-  const lCtx=document.getElementById("lineChart").getContext("2d");
-  const dailyLabels  = d.daily_expense.map(i=>`Day ${i.day}`);
-  const dailyAmounts = d.daily_expense.map(i=>i.amount);
-  lineChart=new Chart(lCtx,{
-    type:"line",
-    data:{labels:dailyLabels,datasets:[{
-      label:"Daily Spending (₹)", data:dailyAmounts,
-      borderColor:"#3b6ef8", backgroundColor:"rgba(59,110,248,0.08)",
-      borderWidth:2.5, pointBackgroundColor:"#3b6ef8",
-      pointRadius:4, pointHoverRadius:6, fill:true, tension:0.4
-    }]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{
-      legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`₹${ctx.parsed.y.toLocaleString("en-IN")}`}}
-    },scales:{
-      y:{beginAtZero:true,grid:{color:"#f2f4f7"},ticks:{callback:v=>"₹"+v.toLocaleString("en-IN"),font:{size:11}}},
-      x:{grid:{display:false},ticks:{font:{size:11}}}
-    }}
+  const lCtx = document.getElementById("lineChart").getContext("2d");
+  const dailyLabels  = d.daily_expense.map(i => `${i.day}`);
+  const dailyAmounts = d.daily_expense.map(i => i.amount);
+  lineChart = new Chart(lCtx, {
+    type: "line",
+    data: { labels: dailyLabels, datasets: [{
+      label: "Daily Spending (₹)", data: dailyAmounts,
+      borderColor: "#3b6ef8", backgroundColor: "rgba(59,110,248,0.08)",
+      borderWidth: 2.5, pointBackgroundColor: "#3b6ef8", pointBorderColor: "white",
+      pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7, fill: true, tension: 0.4
+    }] },
+    options: { ...chartDefaults,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.y.toLocaleString("en-IN")}` } } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: "#f2f4f7" }, ticks: { callback: v => "₹" + (v >= 1000 ? (v/1000).toFixed(0)+"K" : v), font: { size: 11 } } },
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Income vs Expense grouped bar
+  const ieCtx = document.getElementById("incomeExpenseChart").getContext("2d");
+  incomeExpenseChart = new Chart(ieCtx, {
+    type: "bar",
+    data: {
+      labels: ["This Month"],
+      datasets: [
+        { label: "Income", data: [d.income], backgroundColor: "#12b76a", borderRadius: 10, borderSkipped: false },
+        { label: "Expense", data: [d.expense], backgroundColor: "#f04438", borderRadius: 10, borderSkipped: false },
+        { label: "Savings", data: [Math.max(0, d.savings)], backgroundColor: "#3b6ef8", borderRadius: 10, borderSkipped: false }
+      ]
+    },
+    options: { ...chartDefaults,
+      plugins: { legend: { position: "bottom", labels: { font: { size: 12, family: "Plus Jakarta Sans" }, padding: 14, boxWidth: 13 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString("en-IN")}` } }
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: "#f2f4f7" }, ticks: { callback: v => "₹" + (v >= 1000 ? (v/1000).toFixed(0)+"K" : v), font: { size: 11 } } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Income sources pie
+  const incCats   = d.income_categories.slice(0, 6);
+  const incLabels = incCats.map(c => c.name);
+  const incAmts   = incCats.map(c => c.amount);
+  const iCtx = document.getElementById("incomeChart").getContext("2d");
+  incomeChart = new Chart(iCtx, {
+    type: "pie",
+    data: { labels: incLabels.length > 0 ? incLabels : ["No Income"], datasets: [{ data: incAmts.length > 0 ? incAmts : [1], backgroundColor: incAmts.length > 0 ? COLORS : ["#e4e7ec"], borderWidth: 3, borderColor: "white" }] },
+    options: { ...chartDefaults,
+      plugins: { legend: { position: "bottom", labels: { font: { size: 11, family: "Plus Jakarta Sans" }, padding: 12, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ₹${ctx.parsed.toLocaleString("en-IN")}` } }
+      }
+    }
   });
 }
 
