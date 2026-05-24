@@ -466,7 +466,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">📊 Monthly Report</h1>
-            <p class="page-sub">AI-generated spending analysis with charts</p>
+            <p class="page-sub">Professional financial analysis with charts & AI insights</p>
           </div>
         </div>
 
@@ -499,9 +499,9 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
                 <span id="loadReportText">Load Charts</span>
               </button>
-              <button class="btn-ai" onclick="generateAIReport()" id="aiReportBtn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                <span id="aiReportBtnText">Generate AI Report</span>
+              <button class="btn-ai btn-complete-report" onclick="generateCompleteReport()" id="completeReportBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span id="completeReportBtnText">Generate Complete Report</span>
               </button>
             </div>
           </div>
@@ -509,85 +509,141 @@
 
         <!-- Report Stats -->
         <div id="reportStats" style="display:none">
-          <div class="stat-grid" style="margin-top:20px">
-            <div class="stat-card stat-income">
-              <div class="stat-icon income-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
-              </div>
-              <div class="stat-body">
-                <span class="stat-label">Month Income</span>
-                <span class="stat-value income-color" id="rIncome">₹0</span>
-              </div>
-            </div>
-            <div class="stat-card stat-expense">
-              <div class="stat-icon expense-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/></svg>
-              </div>
-              <div class="stat-body">
-                <span class="stat-label">Month Expense</span>
-                <span class="stat-value expense-color" id="rExpense">₹0</span>
+
+          <!-- KPI Cards Row -->
+          <div class="report-kpi-grid" style="margin-top:20px">
+            <div class="kpi-card kpi-income">
+              <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg></div>
+              <div class="kpi-body">
+                <span class="kpi-label">Total Income</span>
+                <span class="kpi-value" id="rIncome">₹0</span>
+                <span class="kpi-sub" id="rIncomeTxns">0 transactions</span>
               </div>
             </div>
-            <div class="stat-card stat-balance">
-              <div class="stat-icon balance-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            <div class="kpi-card kpi-expense">
+              <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/><polyline points="17,18 23,18 23,12"/></svg></div>
+              <div class="kpi-body">
+                <span class="kpi-label">Total Expense</span>
+                <span class="kpi-value" id="rExpense">₹0</span>
+                <span class="kpi-sub" id="rExpenseTxns">0 transactions</span>
               </div>
-              <div class="stat-body">
-                <span class="stat-label">Month Savings</span>
-                <span class="stat-value balance-color" id="rSavings">₹0</span>
+            </div>
+            <div class="kpi-card kpi-savings">
+              <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+              <div class="kpi-body">
+                <span class="kpi-label">Net Savings</span>
+                <span class="kpi-value" id="rSavings">₹0</span>
+                <span class="kpi-sub" id="rSavingsRate">0% of income saved</span>
               </div>
-              <div class="stat-badge income-badge" id="rSavingsRate">0% saved</div>
+            </div>
+            <div class="kpi-card kpi-txns">
+              <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
+              <div class="kpi-body">
+                <span class="kpi-label">Transactions</span>
+                <span class="kpi-value" id="rTxns">0</span>
+                <span class="kpi-sub" id="rAvgExpense">₹0 avg/day</span>
+              </div>
             </div>
           </div>
 
-          <!-- Charts Grid -->
-          <div class="charts-grid">
+          <!-- Savings Progress Bar -->
+          <div class="card savings-progress-card" style="margin-top:16px">
+            <div class="savings-progress-header">
+              <span class="card-title">💰 Savings Rate</span>
+              <span id="rSavingsRateBig" class="savings-rate-big">0%</span>
+            </div>
+            <div class="savings-progress-bar-wrap">
+              <div class="savings-progress-track">
+                <div id="rSavingsBar" class="savings-progress-fill" style="width:0%"></div>
+              </div>
+            </div>
+            <div class="savings-progress-labels">
+              <span>0%</span><span>Poor &lt;20%</span><span>Good 20-40%</span><span>Great &gt;40%</span>
+            </div>
+          </div>
+
+          <!-- Charts Grid — Row 1 -->
+          <div class="charts-grid" style="margin-top:16px">
             <div class="card chart-card">
               <div class="card-header">
-                <h2 class="card-title">🍩 Category-wise Expenses</h2>
+                <h2 class="card-title">🍩 Expense by Category</h2>
+                <span class="chart-badge">Donut Chart</span>
               </div>
-              <div class="chart-body">
-                <canvas id="doughnutChart"></canvas>
-              </div>
+              <div class="chart-body"><canvas id="doughnutChart"></canvas></div>
             </div>
             <div class="card chart-card">
               <div class="card-header">
-                <h2 class="card-title">📊 Expense by Category</h2>
+                <h2 class="card-title">📊 Top Spending Categories</h2>
+                <span class="chart-badge">Bar Chart</span>
               </div>
-              <div class="chart-body">
-                <canvas id="barChart"></canvas>
-              </div>
+              <div class="chart-body"><canvas id="barChart"></canvas></div>
             </div>
+          </div>
+
+          <!-- Charts Grid — Row 2 -->
+          <div class="charts-grid" style="margin-top:16px">
             <div class="card chart-card chart-full">
               <div class="card-header">
                 <h2 class="card-title">📈 Daily Spending Trend</h2>
+                <span class="chart-badge">Line Chart</span>
               </div>
-              <div class="chart-body">
-                <canvas id="lineChart"></canvas>
-              </div>
+              <div class="chart-body"><canvas id="lineChart"></canvas></div>
             </div>
           </div>
 
-          <!-- Category Table -->
-          <div class="card" style="margin-top:20px">
+          <!-- Charts Grid — Row 3 -->
+          <div class="charts-grid" style="margin-top:16px">
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2 class="card-title">⚖️ Income vs Expense</h2>
+                <span class="chart-badge">Comparison</span>
+              </div>
+              <div class="chart-body"><canvas id="incomeExpenseChart"></canvas></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2 class="card-title">🎯 Income Sources</h2>
+                <span class="chart-badge">Pie Chart</span>
+              </div>
+              <div class="chart-body"><canvas id="incomeChart"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Category Breakdown Table -->
+          <div class="card" style="margin-top:16px">
             <div class="card-header">
-              <h2 class="card-title">📋 Category-wise Breakdown</h2>
+              <h2 class="card-title">📋 Detailed Category Breakdown</h2>
             </div>
             <div id="categoryTable" class="category-table"></div>
           </div>
+
+          <!-- Behaviour Insights -->
+          <div class="card behaviour-card" style="margin-top:16px" id="behaviourSection">
+            <div class="card-header">
+              <h2 class="card-title">🧠 Spending Behaviour Insights</h2>
+            </div>
+            <div id="behaviourContent" class="behaviour-grid"></div>
+          </div>
+
         </div>
 
-        <!-- AI Report -->
-        <div id="aiReportResult" style="display:none; margin-top:20px">
-          <div class="card">
+        <!-- Complete Report (AI) -->
+        <div id="completeReportResult" style="display:none; margin-top:20px">
+          <div class="card complete-report-card">
             <div class="card-header">
               <h2 class="card-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                AI Monthly Report — <span id="reportMonthName"></span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+                Complete Report — <span id="completeReportMonthName"></span>
               </h2>
-              <div class="ai-chip">Gemini AI</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <div class="ai-chip">Gemini AI</div>
+                <button class="btn-download" onclick="downloadReport()" id="downloadBtn" style="display:none">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download PDF
+                </button>
+              </div>
             </div>
-            <div id="aiReportContent" class="ai-report-content"></div>
+            <div id="completeReportContent" class="complete-report-content"></div>
           </div>
         </div>
 
