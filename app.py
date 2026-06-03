@@ -15,7 +15,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, KeepTogether
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 #changebyansh
-#changebyansh1
+#changebyansh
+#changebyansh
 
 load_dotenv()
 
@@ -27,6 +28,18 @@ db        = client["etms_db"]
 users_col   = db["users"]
 txns_col    = db["transactions"]
 targets_col = db["targets"]
+aos_hist_col  = db["aos_chat_history"]    # persistent chat history per user
+aos_ctx_col   = db["aos_user_context"]    # extracted financial context per user
+aos_learn_col = db["aos_learned_qa"]      # self-training Q&A store
+
+# ── Create indexes for performance ──────────────────
+try:
+    aos_hist_col.create_index([("user", 1)], unique=True)
+    aos_ctx_col.create_index([("user", 1)], unique=True)
+    aos_learn_col.create_index([("question", "text")])
+    aos_learn_col.create_index([("question_hash", 1)], unique=True)
+except Exception:
+    pass  # Indexes may already exist
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDKH9WAOyZWcB0Yn-NxryiFuCXtUNGAAcw")
 gemini_client  = google_genai.Client(api_key=GEMINI_API_KEY)
@@ -877,5 +890,1657 @@ def delete_target(target_id: str, user: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Target not found")
     return {"status": "ok"}
+
+
+# ── POST /fraud/analyze ──────────────────────────────────
+class FraudRequest(BaseModel):
+    text: str = ""
+    file_data: str = ""
+    file_type: str = ""
+    user: str = ""
+
+@app.post("/fraud/analyze")
+def fraud_analyze(body: FraudRequest):
+    content = body.text.strip()
+    if not content and not body.file_data:
+        raise HTTPException(status_code=400, detail="No content provided")
+
+    import re, urllib.parse
+    text_lower = content.lower()
+    words      = text_lower.split()
+    word_count = len(words)
+
+    # ══════════════════════════════════════════════════
+    # LAYER 1 — CONTEXT NEUTRALIZERS (run first)
+    # Legitimate context that should reduce suspicion
+    # ══════════════════════════════════════════════════
+    neutralizers = []
+    neutral_score = 0
+
+    # Official government websites mentioned
+    official_domains = ["incometax.gov.in", "india.gov.in", "rbi.org.in",
+                        "sebi.gov.in", "uidai.gov.in", "mca.gov.in",
+                        "npci.org.in", "indianrailways.gov.in"]
+    if any(d in text_lower for d in official_domains):
+        neutral_score += 30
+        neutralizers.append("Official government domain mentioned — reduces impersonation risk")
+
+    # Official bank helpline indicators
+    if any(x in text_lower for x in ["1800", "toll free", "customer care", "helpline",
+                                    "official app", "registered mobile"]):
+        neutral_score += 10
+        neutralizers.append("Official helpline/contact reference detected")
+
+    # Transaction confirmation language (real bank messages)
+    txn_words = ["credited", "debited", "transaction id", "txn id", "ref no",
+                "reference number", "utr number", "available balance", "closing balance"]
+    txn_found = [t for t in txn_words if t in text_lower]
+    if len(txn_found) >= 2:
+        neutral_score += 20
+        neutralizers.append(f"Multiple transaction confirmation terms: {', '.join(txn_found[:3])}")
+
+    # Explicit disclaimer of not asking for sensitive info
+    safe_disclaimers = ["never ask for otp", "never share otp", "do not share otp",
+                        "bank will never ask", "do not give", "beware of fraud",
+                        "standard verification", "official government website only",
+                        "visit only the official"]
+    disc_found = [d for d in safe_disclaimers if d in text_lower]
+    if disc_found:
+        neutral_score += 25
+        neutralizers.append(f"Safety disclaimer present: '{disc_found[0]}'")
+
+    # Professional business communication markers
+    if any(x in text_lower for x in ["invoice", "quotation", "purchase order",
+                                    "as per our records", "kindly find attached",
+                                    "with reference to"]):
+        neutral_score += 15
+        neutralizers.append("Professional business communication format")
+
+    # Unsubscribe / legal footer
+    if any(x in text_lower for x in ["unsubscribe", "privacy policy",
+                                    "terms and conditions", "opt out"]):
+        neutral_score += 10
+        neutralizers.append("Contains legal/compliance footer (regulatory requirement)")
+
+    # ══════════════════════════════════════════════════
+    # LAYER 2 — PATTERN DETECTION (10 categories)
+    # Weights are BASE scores — context-adjusted below
+    # ══════════════════════════════════════════════════
+    fraud_patterns = [
+
+        # ── 1. URGENCY & PRESSURE TACTICS ──────────────────
+        ("urgent_language", [
+            # Time pressure
+            "urgent", "act now", "act immediately", "act fast", "respond now",
+            "limited time", "limited period", "limited slots", "limited offer",
+            "last chance", "last opportunity", "final notice", "final reminder",
+            "expires soon", "expiring today", "expires in 24", "expires in 1 hour",
+            "within 24 hours", "within 48 hours", "within the next hour",
+            "before it's too late", "don't miss this", "don't delay",
+            "hurry", "hurry up", "rush", "immediately", "right now",
+            "call now", "reply now", "respond immediately", "asap",
+            "time sensitive", "time is running out", "running out of time",
+            "today only", "offer ends today", "deadline today",
+            "no time to waste", "quick action required", "immediate attention",
+            # Fear of loss
+            "will expire", "will be cancelled", "will be terminated",
+            "will be deleted", "will be deactivated", "will be closed",
+            "last warning", "final warning", "last opportunity"
+        ], 10),
+
+        # ── 2. PRIZE / LOTTERY / GIFT SCAMS ────────────────
+        ("prize_lottery", [
+            # Prize claims
+            "you have won", "you've won", "you won", "you are the winner",
+            "congratulations you", "selected as winner", "lucky winner",
+            "prize winner", "grand prize", "bumper prize", "jackpot winner",
+            # Lottery
+            "lottery", "lucky draw", "lucky number", "lucky dip",
+            "raffle", "sweepstakes", "mega draw", "bumper draw",
+            # Gift & reward
+            "free gift", "gift voucher", "gift card won", "reward points redeemed",
+            "special reward", "you have been selected", "chosen randomly",
+            "random selection", "our lucky customer",
+            # KBC-style scams common in India
+            "kbc lottery", "kbc winner", "kaun banega", "whatsapp lottery",
+            "sim lottery", "jio lottery", "airtel lottery",
+            "facebook lottery", "instagram lucky draw",
+            # Claim language
+            "claim your prize", "collect your prize", "claim reward",
+            "claim gift", "to claim call", "call to collect"
+        ], 20),
+
+        # ── 3. BANKING & OTP FRAUD ─────────────────────────
+        ("bank_request", [
+            # OTP related
+            "share your otp", "enter your otp", "provide otp", "send otp",
+            "otp is required", "verify with otp", "otp verification",
+            "one time password", "enter the otp sent",
+            # PIN / Password
+            "share your pin", "enter your pin", "atm pin", "debit pin",
+            "share your password", "enter your password", "login password",
+            "internet banking password", "net banking password",
+            # Card details
+            "share cvv", "card cvv", "share card number", "full card number",
+            "16 digit card", "card expiry", "card details required",
+            "debit card number", "credit card number",
+            # Account details
+            "share account number", "bank account number", "ifsc code required",
+            "share net banking", "net banking credentials", "online banking details",
+            "share upi pin", "upi password", "google pay pin", "phonepe pin",
+            "paytm pin", "share upi id",
+            # General banking
+            "bank details required", "banking information", "verify your bank",
+            "update bank details", "re-enter banking", "confirm bank account"
+        ], 28),
+
+        # ── 4. PERSONAL IDENTITY THEFT ─────────────────────
+        ("personal_info", [
+            # Aadhaar
+            "share your aadhaar", "send aadhaar", "aadhaar number required",
+            "aadhaar card details", "aadhaar otp", "aadhaar verification",
+            "12 digit aadhaar",
+            # PAN
+            "share pan", "send pan", "pan card required", "pan number",
+            "pan details", "pan card copy", "pan card photo",
+            # Other identity
+            "share passport", "passport number required", "passport copy",
+            "voter id", "driving licence copy", "share driving licence",
+            # Personal details
+            "mother's name", "father's name", "date of birth required",
+            "dob required", "share your dob", "place of birth",
+            "personal details required", "personal information required",
+            "submit your documents", "upload your id", "id proof required",
+            "address proof", "kyc documents", "full kyc required",
+            "video kyc", "complete your kyc", "kyc expired",
+            "kyc pending", "kyc update required",
+            # Financial identity
+            "pan linked", "aadhaar linked", "link aadhaar",
+            "gstin required", "gst number"
+        ], 20),
+
+        # ── 5. PHISHING LINKS ──────────────────────────────
+        ("suspicious_links", [
+            # URL shorteners
+            "bit.ly", "tinyurl", "shorturl", "rb.gy", "t.ly",
+            "ow.ly", "is.gd", "buff.ly", "tiny.cc", "short.io",
+            "cutt.ly", "rebrand.ly", "smarturl",
+            # Suspicious TLDs
+            ".xyz", ".tk", ".ml", ".ga", ".cf", ".top",
+            ".icu", ".club", ".online", ".site", ".win",
+            # Phishing action words
+            "click here to verify", "click here to claim", "click to collect",
+            "click here to get", "click here immediately",
+            "login here", "login now", "sign in here",
+            "verify account now", "verify your account",
+            "update your account", "confirm your account",
+            "activate your account", "reactivate account",
+            "secure your account", "unlock your account",
+            # Link invitation
+            "open the link", "visit the link", "follow the link",
+            "tap the link", "use the link below", "click the button"
+        ], 20),
+
+        # ── 6. AUTHORITY IMPERSONATION ─────────────────────
+        ("impersonation", [
+            # Financial regulators
+            "rbi has", "reserve bank of india notice", "rbi officer",
+            "rbi helpline fraud", "fake rbi", "rbi is calling",
+            "sebi notice", "sebi officer", "irdai notice",
+            "npci alert", "nabard officer",
+            # Tax authorities
+            "income tax has", "income tax department notice",
+            "income tax officer calling", "it department case",
+            "gst department", "gst fraud detected", "tax evasion detected",
+            # Law enforcement
+            "police is coming", "police has registered", "police complaint",
+            "cbi has", "cbi officer", "cbi investigation",
+            "enforcement directorate", "ed officer", "ed raid",
+            "cybercrime has detected", "cybercrime police",
+            "crime branch", "anti fraud cell",
+            # Courts
+            "court has issued", "court order", "court summons",
+            "high court notice", "supreme court order",
+            "arrest warrant issued", "non-bailable warrant",
+            # Customs & Narcotics
+            "customs has seized", "narcotics found",
+            "customs officer", "narcotics bureau",
+            # Telecom
+            "trai notice", "trai has detected", "sim will be blocked",
+            "your number will be deactivated", "telecom department"
+        ], 20),
+
+        # ── 7. MONEY TRANSFER REQUESTS ─────────────────────
+        ("money_transfer", [
+            # Transfer requests
+            "send money", "transfer money", "money transfer required",
+            "transfer funds", "send funds", "wire transfer",
+            "transfer to this account", "deposit to this account",
+            # International transfer
+            "western union", "money gram", "moneygram",
+            "swift transfer", "iban transfer",
+            # Crypto
+            "send bitcoin", "send crypto", "pay in crypto",
+            "bitcoin payment", "ethereum payment", "usdt payment",
+            "pay in usdt", "send usdt", "crypto wallet",
+            "bitcoin address", "wallet address",
+            # Gift cards (common in scams)
+            "pay via gift card", "itunes gift card", "amazon gift card",
+            "google play gift card", "steam gift card", "gift card code",
+            # Fees & charges (advance fee fraud)
+            "registration fee", "processing fee", "advance fee",
+            "security deposit", "refundable fee", "token amount",
+            "joining fee", "activation fee", "admin fee",
+            "handling fee", "delivery fee to release",
+            "pay to claim", "fee to receive", "small fee required",
+            "pay first to get", "deposit required to unlock",
+            # UPI frauds
+            "collect request", "upi collect", "scan and pay to receive",
+            "pay rs to get rs", "pay small amount to unlock"
+        ], 18),
+
+        # ── 8. INVESTMENT & RETURNS SCAMS ──────────────────
+        ("too_good", [
+            # Return promises
+            "guaranteed returns", "guaranteed profit", "guaranteed income",
+            "100% guaranteed", "assured returns", "fixed returns",
+            "risk free returns", "no risk investment", "zero risk",
+            "100% safe investment", "fully guaranteed",
+            # Unrealistic returns
+            "double your money", "triple your money", "10x returns",
+            "1000% returns", "500% profit", "200% profit",
+            "1 lakh becomes 10 lakh", "money doubles in",
+            "invest 1000 get 10000", "turn 500 into",
+            # Easy money
+            "easy money", "earn daily", "earn rs daily",
+            "earn without working", "no work earn",
+            "earn while sleeping", "passive income guaranteed",
+            "automated income", "money works for you",
+            # Per day income
+            "rs 5000 per day", "rs 10000 daily", "earn 50000 monthly",
+            "per day income guaranteed", "daily payout",
+            # No experience needed
+            "no experience needed", "no skills required",
+            "anyone can do it", "no investment required",
+            "zero investment earn", "free to join earn",
+            # Get rich schemes
+            "get rich quick", "financial freedom fast",
+            "become crorepati", "crorepati scheme",
+            "millionaire in months", "financially free in"
+        ], 16),
+
+        # ── 9. THREATS & LEGAL INTIMIDATION ────────────────
+        ("threat_pressure", [
+            # Arrest threats
+            "will be arrested", "arrest warrant", "warrant issued",
+            "police will arrest", "will face arrest", "arrested immediately",
+            "non-bailable warrant", "bailable warrant issued",
+            # FIR & Legal
+            "fir registered", "fir has been filed", "case registered",
+            "criminal case", "criminal charges", "legal case filed",
+            "complaint filed against you", "case against your number",
+            # Court
+            "court case", "court summons", "appear in court",
+            "court order issued", "contempt of court",
+            # Account threats
+            "account will be blocked", "account will be frozen",
+            "account permanently blocked", "account will be closed",
+            "sim will be blocked", "number will be deactivated",
+            "services will be stopped",
+            # Financial penalties
+            "penalty imposed", "fine imposed", "penalty of rs",
+            "tax penalty", "late fee penalty",
+            # Jail
+            "jail", "imprisonment", "behind bars",
+            "custody", "taken into custody",
+            # General legal threats
+            "legal action", "legal notice", "legal proceedings",
+            "last warning", "final warning", "immediate action"
+        ], 22),
+
+        # ── 10. JOB & INCOME SCAMS ─────────────────────────
+        ("job_scam", [
+            # Work from home
+            "work from home", "work at home", "home based job",
+            "work from anywhere", "remote earning opportunity",
+            # Part time jobs
+            "part time job", "part time earn", "earn part time",
+            "flexible job", "flexible timing earn",
+            # Data entry scams
+            "data entry job", "data entry earn", "form filling job",
+            "captcha solving job", "copy paste job",
+            # Reseller scams
+            "reseller program", "become a reseller", "product reselling",
+            "amazon reseller", "flipkart reseller",
+            # MLM & Network marketing
+            "mlm", "network marketing", "multi level marketing",
+            "direct selling", "downline", "upline", "matrix plan",
+            "binary plan", "chain marketing", "pyramid scheme",
+            # Refer & earn
+            "refer and earn", "refer friends earn",
+            "unlimited referral", "earn per referral",
+            # Joining fees
+            "joining fee", "registration charge", "starter kit fee",
+            "training fee to start", "pay to join and earn",
+            # Investment plans
+            "investment plan daily returns", "forex trading guaranteed",
+            "stock tips guaranteed profit", "crypto trading guaranteed"
+        ], 16),
+
+        # ── 11. ROMANCE & RELATIONSHIP SCAMS ───────────────
+        ("romance_scam", [
+            "met you online", "i like your profile",
+            "want to be your friend", "lonely and rich",
+            "foreign national", "stranded abroad", "stuck at airport",
+            "customs holding my money", "need your help financially",
+            "send me money i will repay", "i love you send money",
+            "military officer abroad", "doctor working abroad",
+            "widower looking for", "divorce settlement send",
+            "inheritance stuck", "funds stuck in customs"
+        ], 18),
+
+        # ── 12. INSURANCE & POLICY SCAMS ───────────────────
+        ("insurance_scam", [
+            "insurance policy bonus", "policy matured claim now",
+            "lic bonus unclaimed", "insurance refund pending",
+            "policy surrender value", "insurance agent calling",
+            "free insurance policy", "health cover free",
+            "your policy expires", "policy renewal urgent",
+            "insurance company selected you", "claim your insurance",
+            "life insurance bonus credited", "term plan bonus"
+        ], 16),
+
+        # ── 13. LOAN & CREDIT SCAMS ────────────────────────
+        ("loan_scam", [
+            "instant loan approved", "pre-approved loan",
+            "loan approved without documents", "no cibil check loan",
+            "bad cibil loan approved", "instant personal loan",
+            "loan in 5 minutes", "loan in 10 minutes",
+            "processing fee for loan", "insurance for loan disbursement",
+            "loan disbursement pending fee", "gst for loan release",
+            "loan app", "instant cash app", "easy loan app",
+            "zero interest loan", "cheap loan offer"
+        ], 16),
+
+        # ── 14. FAKE CUSTOMER CARE ─────────────────────────
+        ("fake_support", [
+            "customer care executive calling",
+            "bank executive calling", "rbi executive",
+            "calling from bank head office",
+            "your account shows suspicious activity",
+            "fraud detected in your account",
+            "unauthorized transaction in your account",
+            "we detected a login from unknown device",
+            "your account will be suspended unless",
+            "verify your details to protect your account",
+            "kindly cooperate with our executive",
+            "screen sharing required", "anydesk", "teamviewer",
+            "install this app", "allow remote access"
+        ], 22),
+
+        # ── 15. CRYPTOCURRENCY & TRADING SCAMS ─────────────
+        ("crypto_trading_scam", [
+            "crypto investment guaranteed", "bitcoin investment plan",
+            "crypto trading bot", "automated crypto trading",
+            "forex trading signals", "fx trading guaranteed",
+            "binary options", "trading platform register",
+            "crypto doubler", "bitcoin doubler",
+            "invest usdt earn", "nft investment guaranteed",
+            "defi guaranteed returns", "yield farming guaranteed",
+            "liquidity pool guaranteed", "staking guaranteed returns",
+            "crypto mining investment", "cloud mining earn",
+            "crypto signal group", "pump and dump signal",
+            "insider trading tips", "100x altcoin"
+        ], 18),
+
+    ]
+
+    triggered    = []
+    safe_signals = []
+    raw_score    = 0
+
+    for pattern_name, keywords, base_weight in fraud_patterns:
+        matched = [k for k in keywords if k in text_lower]
+        if matched:
+            # Smaller bonus — max +12 for many matches
+            bonus  = min(len(matched) - 1, 3) * 4
+            weight = base_weight + bonus
+            triggered.append((pattern_name, matched, weight))
+            raw_score += weight
+
+    triggered_names = [p for p, _, _ in triggered]
+
+    # ══════════════════════════════════════════════════
+    # LAYER 3 — STRUCTURAL ANALYSIS (smaller weights)
+    # ══════════════════════════════════════════════════
+    structural_flags = []
+
+    exclamation_count = content.count("!")
+    if exclamation_count >= 4:
+        raw_score += 8
+        structural_flags.append(f"Excessive exclamation marks ({exclamation_count}) — pressure tactic")
+
+    caps_words = [w for w in content.split() if w.isupper() and len(w) > 3
+                and w not in ["HDFC","ICICI","SBI","AXIS","UPI","OTP","ATM","KYC","PAN","TXN"]]
+    if len(caps_words) >= 3:
+        raw_score += 7
+        structural_flags.append(f"Multiple alarm ALL-CAPS words: {', '.join(caps_words[:3])}")
+
+    if word_count < 25 and len(triggered) >= 2:
+        raw_score += 8
+        structural_flags.append("Very short message with multiple fraud indicators — typical scam SMS")
+
+    urls = re.findall(r'https?://\S+|www\.\S+|bit\.ly\S*|tinyurl\S*', content, re.IGNORECASE)
+    for url in urls:
+        is_official = any(d in url.lower() for d in official_domains)
+        if is_official:
+            pass  # already handled by neutralizer
+        elif any(x in url.lower() for x in ["bit.ly","tinyurl",".xyz",".tk","shorturl"]):
+            raw_score += 15
+            structural_flags.append(f"Shortened/suspicious URL: {url[:50]}")
+        elif "http://" in url and not is_official:
+            raw_score += 8
+            structural_flags.append(f"Insecure HTTP link: {url[:50]}")
+
+    money_pattern = re.findall(r'rs\.?\s*[\d,]+|₹\s*[\d,]+', text_lower)
+    if money_pattern and len(triggered) >= 3:
+        raw_score += 6
+        structural_flags.append(f"Monetary amounts with multiple fraud patterns: {', '.join(money_pattern[:2])}")
+
+    grammar_issues = ["kindly do the needful", "plz send", "pls reply urgently",
+                    "asap send money", "dear sir/madam do needful"]
+    if any(g in text_lower for g in grammar_issues):
+        raw_score += 5
+        structural_flags.append("Unusual phrasing common in scam messages")
+
+    # ══════════════════════════════════════════════════
+    # LAYER 4 — COMBINATION SCORING (moderate weights)
+    # ══════════════════════════════════════════════════
+    combo_flags = []
+    if "urgent_language" in triggered_names and "bank_request" in triggered_names:
+        raw_score += 15
+        combo_flags.append("CRITICAL: Urgency + Bank detail request = Phishing attack pattern")
+    if "too_good" in triggered_names and "money_transfer" in triggered_names:
+        raw_score += 15
+        combo_flags.append("CRITICAL: Unrealistic returns + Fee payment = Advance fee fraud")
+    if "prize_lottery" in triggered_names and "money_transfer" in triggered_names:
+        raw_score += 12
+        combo_flags.append("HIGH: Prize claim + Money transfer = Lottery scam")
+    if "impersonation" in triggered_names and "threat_pressure" in triggered_names:
+        raw_score += 15
+        combo_flags.append("CRITICAL: Authority impersonation + Threats = Government scam")
+    if "suspicious_links" in triggered_names and "urgent_language" in triggered_names:
+        raw_score += 12
+        combo_flags.append("HIGH: Suspicious link + Urgency = Phishing attack")
+    if "job_scam" in triggered_names and "money_transfer" in triggered_names:
+        raw_score += 12
+        combo_flags.append("HIGH: Job offer + Fee payment = Job scam")
+    if len(triggered_names) >= 5:
+        raw_score += 10
+        combo_flags.append("Multiple fraud categories simultaneously triggered")
+
+    # ══════════════════════════════════════════════════
+    # LAYER 5 — SAFE SIGNALS (context-sensitive)
+    # ══════════════════════════════════════════════════
+    has_heavy_fraud = len(triggered) >= 3 or raw_score >= 60
+
+    if not has_heavy_fraud:
+        if any(x in text_lower for x in ["regards", "sincerely", "thank you for"]):
+            safe_signals.append("Professional closing detected")
+        if re.search(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', content):
+            safe_signals.append("Verifiable email address present")
+        if len(txn_found) >= 1:
+            safe_signals.append("Contains transaction reference")
+        if word_count > 80 and len(triggered) <= 1:
+            safe_signals.append("Detailed content with minimal fraud indicators")
+
+    # ══════════════════════════════════════════════════
+    # FINAL SCORE — Apply neutralizers
+    # ══════════════════════════════════════════════════
+    safe_deduction    = len(safe_signals) * 3 if not has_heavy_fraud else 0
+    raw_score         = max(0, raw_score - safe_deduction)
+
+    # Neutralizers reduce final score proportionally
+    effective_neutral = min(neutral_score, raw_score * 0.6)  # can reduce max 60% of score
+    final_score       = max(0, raw_score - effective_neutral)
+
+    # Normalize to realistic range — cap at 95 (nothing is 100% certain)
+    fraud_score = min(95, int(final_score))
+
+    # ══════════════════════════════════════════════════
+    # RISK CLASSIFICATION
+    # ══════════════════════════════════════════════════
+    if fraud_score >= 80:
+        risk_level   = "HIGH RISK"
+        risk_emoji   = "🚨"
+        confidence   = "Very High"
+        recommendation = "🚨 IMMEDIATE ACTION REQUIRED: Do NOT respond, click any links, call any numbers, or share any information. Delete this message immediately. Block the sender. Report at cybercrime.gov.in or call National Cyber Crime Helpline 1930."
+    elif fraud_score >= 60:
+        risk_level   = "HIGH RISK"
+        risk_emoji   = "🚨"
+        confidence   = "High"
+        recommendation = "🚨 HIGH FRAUD RISK: Do not engage with this content. Do NOT share bank details, OTP, or personal information. Verify independently through official channels only (official website/registered number)."
+    elif fraud_score >= 40:
+        risk_level   = "MEDIUM RISK"
+        risk_emoji   = "⚠️"
+        confidence   = "Medium"
+        recommendation = "⚠️ PROCEED WITH CAUTION: Multiple suspicious indicators found. Do NOT share any sensitive information. Independently verify the sender's identity through official sources before taking any action."
+    elif fraud_score >= 20:
+        risk_level   = "LOW RISK"
+        risk_emoji   = "💡"
+        confidence   = "Medium"
+        recommendation = "💡 STAY ALERT: Minor suspicious elements detected. Verify the source before responding. Never share OTP, PIN, or banking credentials with anyone, even if they claim to be from your bank."
+    else:
+        risk_level   = "SAFE"
+        risk_emoji   = "✅"
+        confidence   = "High"
+        recommendation = "✅ APPEARS SAFE: No significant fraud indicators detected in this content. However, always stay vigilant — never share OTP, PIN, or passwords with anyone under any circumstances."
+
+    # ══════════════════════════════════════════════════
+    # BUILD PROFESSIONAL REPORT
+    # ══════════════════════════════════════════════════
+    flag_labels = {
+        "urgent_language":    "Urgency & Pressure Tactics",
+        "prize_lottery":      "Prize / Lottery Scam Indicators",
+        "bank_request":       "Sensitive Banking Information Request",
+        "personal_info":      "Personal Identity Information Request",
+        "suspicious_links":   "Suspicious URLs / Phishing Links",
+        "impersonation":      "Government / Authority Impersonation",
+        "money_transfer":     "Money Transfer / Fee Payment Request",
+        "too_good":           "Unrealistic Financial Promises",
+        "threat_pressure":    "Threats & Legal Action Intimidation",
+        "job_scam":           "Fake Job / MLM / Income Scheme",
+        "romance_scam":       "Romance / Relationship Fraud",
+        "insurance_scam":     "Fake Insurance / Policy Scam",
+        "loan_scam":          "Fraudulent Loan / Credit Offer",
+        "fake_support":       "Fake Customer Care / Remote Access Scam",
+        "crypto_trading_scam":"Crypto / Forex / Trading Scam",
+    }
+
+    red_flags = []
+    for p, m, w in triggered:
+        red_flags.append(f"{flag_labels[p]} — Keywords: {', '.join(m[:4])}")
+    for f in structural_flags:
+        red_flags.append(f)
+    for c in combo_flags:
+        red_flags.append(c)
+
+    # Fraud type classification
+    fraud_type = "Unknown"
+    if "prize_lottery" in triggered_names:            fraud_type = "Lottery / Prize Scam"
+    elif "romance_scam" in triggered_names:           fraud_type = "Romance / Relationship Scam"
+    elif "fake_support" in triggered_names:           fraud_type = "Fake Customer Care Scam"
+    elif "crypto_trading_scam" in triggered_names:    fraud_type = "Crypto / Trading Scam"
+    elif "loan_scam" in triggered_names:              fraud_type = "Fraudulent Loan Offer"
+    elif "insurance_scam" in triggered_names:         fraud_type = "Fake Insurance / Policy Scam"
+    elif "job_scam" in triggered_names:               fraud_type = "Fake Job / MLM Scam"
+    elif "impersonation" in triggered_names:          fraud_type = "Government Impersonation Scam"
+    elif "bank_request" in triggered_names:           fraud_type = "Banking Phishing Attempt"
+    elif "suspicious_links" in triggered_names:       fraud_type = "Phishing / Link-based Attack"
+    elif "too_good" in triggered_names:               fraud_type = "Investment / Returns Scam"
+    elif "threat_pressure" in triggered_names:        fraud_type = "Threat-based Fraud"
+    elif len(triggered) == 0:                         fraud_type = "No Fraud Detected"
+
+    analysis_parts = []
+    analysis_parts.append("## 📋 Executive Summary")
+    if fraud_score >= 40:
+        analysis_parts.append(
+            f"This content has been classified as **{risk_level}** with a fraud score of **{fraud_score}/100**. "
+            f"Our analysis detected **{len(triggered)} fraud pattern categories** and **{len(structural_flags)} structural anomalies**. "
+            f"The likely fraud type is: **{fraud_type}**. "
+            f"Detection confidence: **{confidence}**. "
+            f"Immediate caution is advised."
+        )
+    else:
+        analysis_parts.append(
+            f"This content has been classified as **{risk_level}** with a fraud score of **{fraud_score}/100**. "
+            f"{'No significant fraud indicators were detected.' if fraud_score < 20 else 'Minor indicators were detected — proceed with normal caution.'} "
+            f"Detection confidence: **{confidence}**."
+        )
+
+    analysis_parts.append("\n## 🔍 Pattern Analysis")
+    if triggered:
+        for p, matches, w in triggered:
+            analysis_parts.append(
+                f"**{flag_labels[p]}** *(Score contribution: +{w} pts)*\n"
+                f"Detected: `{', '.join(matches[:5])}`\n"
+            )
+    else:
+        analysis_parts.append("No fraud patterns triggered in this content.")
+
+    if structural_flags:
+        analysis_parts.append("\n## 🏗️ Structural Red Flags")
+        for f in structural_flags:
+            analysis_parts.append(f"- {f}")
+
+    if combo_flags:
+        analysis_parts.append("\n## ⚡ Dangerous Combinations Detected")
+        for c in combo_flags:
+            analysis_parts.append(f"- {c}")
+
+    if safe_signals:
+        analysis_parts.append("\n## ✅ Safe Indicators Found")
+        for s in safe_signals:
+            analysis_parts.append(f"- {s}")
+
+    analysis_parts.append("\n## 📊 Scoring Breakdown")
+    analysis_parts.append(f"- **Base pattern score:** {sum(w for _,_,w in triggered)} pts")
+    analysis_parts.append(f"- **Structural flags:** +{raw_score - sum(w for _,_,w in triggered)} pts")
+    analysis_parts.append(f"- **Safe signal deduction:** -{safe_deduction} pts")
+    analysis_parts.append(f"- **Final fraud score:** **{fraud_score}/100**")
+    analysis_parts.append(f"- **Fraud type classified as:** {fraud_type}")
+    analysis_parts.append(f"- **Patterns checked:** {len(fraud_patterns)}")
+    analysis_parts.append(f"- **Patterns triggered:** {len(triggered)}")
+
+    if fraud_score >= 40:
+        analysis_parts.append("\n## ⚠️ How This Fraud Works")
+        if fraud_type == "Lottery / Prize Scam":
+            analysis_parts.append("Scammers claim you won a prize to create excitement, then ask for a 'processing fee' or your bank details to 'transfer the prize money'. Once you pay or share details, they disappear.")
+        elif fraud_type == "Fake Job / Investment Scam":
+            analysis_parts.append("Scammers promise easy income or high returns. They charge a registration/joining fee upfront. Once paid, they either disappear or keep asking for more fees.")
+        elif fraud_type == "Government Impersonation Scam":
+            analysis_parts.append("Scammers pretend to be police, RBI, or government officials. They threaten arrest or legal action to create fear, then demand money or personal information to 'resolve' the fake issue.")
+        elif fraud_type == "Banking Phishing Attempt":
+            analysis_parts.append("Scammers impersonate your bank and create urgency (account blocked, KYC pending). They collect your OTP, PIN, or card details to steal money from your account.")
+        elif fraud_type == "Investment / Returns Scam":
+            analysis_parts.append("Unrealistic return promises (100%, guaranteed profits) are used to lure victims. Initial small returns are paid using other victims' money (Ponzi scheme) until the scammer disappears.")
+
+    analysis_parts.append("\n## 🛡️ How to Stay Protected")
+    analysis_parts.append("- **Never share OTP, PIN, CVV, or passwords** — your bank will NEVER ask for these")
+    analysis_parts.append("- **Verify independently** — call the official helpline (on the back of your card or official website)")
+    analysis_parts.append("- **Do not click suspicious links** — type official URLs directly in your browser")
+    analysis_parts.append("- **Report fraud** — cybercrime.gov.in or National Helpline **1930**")
+    analysis_parts.append("- **When in doubt, don't** — it is better to miss an opportunity than lose money")
+
+    # Try AI enhancement
+    try:
+        ai_q = (f"Fraud analysis Indian context. Score:{fraud_score}/100 Type:{fraud_type} "
+                f"Patterns:{chr(44).join(triggered_names[:4])}. "
+                f"Give 2-3 specific insights max 80 words.")
+        ai_resp = gemini_client.models.generate_content(model="gemini-2.0-flash", contents=ai_q)
+        analysis_parts.append(f"\n## 🤖 AI Expert Insights\n{ai_resp.text.strip()}")
+    except:
+        pass
+
+
+    return {
+        "fraud_score":        fraud_score,
+        "risk_level":         risk_level,
+        "fraud_type":         fraud_type,
+        "confidence":         confidence,
+        "red_flags":          red_flags,
+        "safe_signals":       safe_signals,
+        "detailed_analysis":  "\n".join(analysis_parts),
+        "recommendation":     recommendation,
+        "patterns_triggered": len(triggered),
+        "analyzed_at":        datetime.now().strftime("%d %b %Y, %I:%M %p")
+    }
+
+# ── POST /fraud/pdf ──────────────────────────────────────
+class FraudPDFRequest(BaseModel):
+    fraud_score: int
+    risk_level: str
+    red_flags: list
+    safe_signals: list
+    detailed_analysis: str
+    recommendation: str
+    patterns_triggered: int
+    analyzed_at: str
+    analyzed_text: str = ""
+
+@app.post("/fraud/pdf")
+def fraud_pdf(body: FraudPDFRequest):
+    import re
+    buffer = io.BytesIO()
+    doc    = SimpleDocTemplate(buffer, pagesize=A4,
+                leftMargin=1.8*cm, rightMargin=1.8*cm,
+                topMargin=1.8*cm, bottomMargin=1.8*cm)
+
+    # Colors
+    score      = body.fraud_score
+    RISK_COLOR = (colors.HexColor("#f04438") if score >= 80 else
+                  colors.HexColor("#f79009") if score >= 50 else
+                  colors.HexColor("#f59e0b") if score >= 25 else
+                  colors.HexColor("#12b76a"))
+    RISK_BG    = (colors.HexColor("#fef3f2") if score >= 80 else
+                  colors.HexColor("#fffaeb") if score >= 50 else
+                  colors.HexColor("#fffaeb") if score >= 25 else
+                  colors.HexColor("#ecfdf3"))
+    BLUE    = colors.HexColor("#3b6ef8")
+    RED     = colors.HexColor("#f04438")
+    GREEN   = colors.HexColor("#12b76a")
+    GRAY900 = colors.HexColor("#101828")
+    GRAY700 = colors.HexColor("#344054")
+    GRAY500 = colors.HexColor("#667085")
+    GRAY100 = colors.HexColor("#f2f4f7")
+    GRAY50  = colors.HexColor("#f9fafb")
+    WHITE   = colors.white
+
+    def S(name, **kw): return ParagraphStyle(name, **kw)
+    title_s = S("T",  fontSize=18, textColor=WHITE,   fontName="Helvetica-Bold", leading=24)
+    sub_s   = S("Su", fontSize=8,  textColor=colors.HexColor("#c7d7fe"), fontName="Helvetica", leading=12)
+    h2_s    = S("H2", fontSize=11, textColor=GRAY900, fontName="Helvetica-Bold", leading=15, spaceBefore=4)
+    h3_s    = S("H3", fontSize=9,  textColor=BLUE,    fontName="Helvetica-Bold", leading=13)
+    body_s  = S("B",  fontSize=8.5,textColor=GRAY700, fontName="Helvetica",      leading=13)
+    small_s = S("Sm", fontSize=7.5,textColor=GRAY500, fontName="Helvetica",      leading=11)
+    foot_s  = S("F",  fontSize=6.5,textColor=GRAY500, fontName="Helvetica",      leading=9, alignment=TA_CENTER)
+    score_s = S("Sc", fontSize=36, textColor=RISK_COLOR, fontName="Helvetica-Bold", leading=40, alignment=TA_CENTER)
+    slbl_s  = S("Sl", fontSize=13, textColor=RISK_COLOR, fontName="Helvetica-Bold", leading=16, alignment=TA_CENTER)
+    ctr_s   = S("Ct", fontSize=8,  textColor=GRAY500, fontName="Helvetica",      leading=11, alignment=TA_CENTER)
+
+    story = []
+    PW = 17.4 * cm
+
+    # Header
+    hdr = Table([[
+        Paragraph("🔍 ETMS Financial Fraud Analysis Report", title_s),
+        Paragraph(f"Analyzed: {body.analyzed_at}<br/>ETMS Fraud Detector", sub_s)
+    ]], colWidths=[11*cm, 6.4*cm])
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND", (0,0),(-1,-1), BLUE),
+        ("ROWPADDING", (0,0),(-1,-1), 18),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("ALIGN",      (1,0),(1,0),   "RIGHT"),
+    ]))
+    story += [hdr, Spacer(1, 16)]
+
+    # Score card
+    icon = "🚨" if score >= 80 else ("⚠️" if score >= 50 else ("💡" if score >= 25 else "✅"))
+    score_tbl = Table([[
+        Paragraph(f"{score}", score_s),
+        Paragraph("/100", S("S2", fontSize=14, textColor=GRAY500, fontName="Helvetica", leading=18, alignment=TA_CENTER)),
+        Paragraph(f"Fraud Risk Score", ctr_s),
+    ],[
+        Paragraph(f"{icon} {body.risk_level}", slbl_s), "", ""
+    ]], colWidths=[3*cm, 2*cm, 12.4*cm], rowHeights=[1.8*cm, 0.9*cm])
+    score_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0),(-1,-1), RISK_BG),
+        ("SPAN",       (0,0),(0,0)),
+        ("SPAN",       (0,1),(2,1)),
+        ("ALIGN",      (0,0),(-1,-1), "CENTER"),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("ROWPADDING", (0,0),(-1,-1), 10),
+        ("BOX",        (0,0),(-1,-1), 2, RISK_COLOR),
+    ]))
+    story += [score_tbl, Spacer(1, 14)]
+
+    # Analyzed content
+    if body.analyzed_text:
+        story.append(Paragraph("📄 Analyzed Content", h2_s))
+        story.append(Spacer(1, 4))
+        content_tbl = Table([[Paragraph(body.analyzed_text[:400] + ("…" if len(body.analyzed_text) > 400 else ""), body_s)]],
+                            colWidths=[PW])
+        content_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0),(-1,-1), GRAY50),
+            ("ROWPADDING", (0,0),(-1,-1), 10),
+            ("BOX",        (0,0),(-1,-1), 0.5, GRAY100),
+        ]))
+        story += [content_tbl, Spacer(1, 12)]
+
+    # Red flags & safe signals
+    story.append(Paragraph("🚩 Red Flags Detected", h2_s))
+    story.append(Spacer(1, 4))
+    if body.red_flags:
+        for flag in body.red_flags:
+            flag_row = Table([[Paragraph(f"⚠ {flag}", body_s)]], colWidths=[PW])
+            flag_row.setStyle(TableStyle([
+                ("BACKGROUND", (0,0),(-1,-1), colors.HexColor("#fef3f2")),
+                ("ROWPADDING", (0,0),(-1,-1), 7),
+                ("BOX",        (0,0),(-1,-1), 0.5, RED),
+                ("LEFTPADDING",(0,0),(-1,-1), 12),
+            ]))
+            story += [flag_row, Spacer(1, 3)]
+    else:
+        story.append(Paragraph("✅ No red flags detected", body_s))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("✅ Safe Signals", h2_s))
+    story.append(Spacer(1, 4))
+    if body.safe_signals:
+        for sig in body.safe_signals:
+            sig_row = Table([[Paragraph(f"✓ {sig}", body_s)]], colWidths=[PW])
+            sig_row.setStyle(TableStyle([
+                ("BACKGROUND", (0,0),(-1,-1), colors.HexColor("#ecfdf3")),
+                ("ROWPADDING", (0,0),(-1,-1), 7),
+                ("BOX",        (0,0),(-1,-1), 0.5, GREEN),
+                ("LEFTPADDING",(0,0),(-1,-1), 12),
+            ]))
+            story += [sig_row, Spacer(1, 3)]
+    else:
+        story.append(Paragraph("No safe signals identified", body_s))
+    story.append(Spacer(1, 12))
+
+    # Detailed analysis
+    story.append(HRFlowable(width="100%", thickness=0.5, color=GRAY100))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("🔎 Detailed Analysis", h2_s))
+    story.append(Spacer(1, 6))
+    for line in body.detailed_analysis.split("\n"):
+        line = line.strip()
+        if not line: story.append(Spacer(1, 3)); continue
+        line = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line)
+        if line.startswith("## "): story.append(Paragraph(line[3:], h2_s))
+        elif line.startswith("- "): story.append(Paragraph("• " + line[2:], body_s))
+        else: story.append(Paragraph(line, body_s))
+    story.append(Spacer(1, 12))
+
+    # Recommendation
+    story.append(HRFlowable(width="100%", thickness=0.5, color=GRAY100))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("💡 Our Recommendation", h2_s))
+    story.append(Spacer(1, 4))
+    rec_tbl = Table([[Paragraph(body.recommendation, body_s)]], colWidths=[PW])
+    rec_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0),(-1,-1), RISK_BG),
+        ("ROWPADDING", (0,0),(-1,-1), 12),
+        ("BOX",        (0,0),(-1,-1), 2, RISK_COLOR),
+        ("LEFTPADDING",(0,0),(-1,-1), 14),
+    ]))
+    story += [rec_tbl, Spacer(1, 14)]
+
+    # Footer
+    story += [
+        HRFlowable(width="100%", thickness=0.5, color=GRAY100),
+        Spacer(1, 6),
+        Paragraph("Generated by ETMS Fraud Detector  |  For suspicious activity report to cybercrime.gov.in or call 1930  |  " +
+                  datetime.now().strftime("%d %b %Y"), foot_s)
+    ]
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=ETMS_Fraud_Report.pdf"})
+
+
+
+# ── GET /aos/history ──────────────────────────────────────
+@app.get("/aos/history")
+def get_aos_history(user: str):
+    if not user:
+        return {"messages": []}
+    doc = aos_hist_col.find_one({"user": user}, {"_id": 0})
+    if doc:
+        return {"messages": doc.get("messages", [])[-60:]}  # last 60 messages
+    return {"messages": []}
+
+# ── POST /aos/history/save ────────────────────────────────
+class AOSHistorySave(BaseModel):
+    user: str
+    messages: list
+
+@app.post("/aos/history/save")
+def save_aos_history(body: AOSHistorySave):
+    if not body.user:
+        return {"status": "ok"}
+    # Keep only last 100 messages
+    msgs = body.messages[-100:]
+    aos_hist_col.update_one(
+        {"user": body.user},
+        {"$set": {"messages": msgs, "updated_at": datetime.now().isoformat()}},
+        upsert=True
+    )
+    return {"status": "ok"}
+
+# ── POST /aos/context/save ────────────────────────────────
+class AOSContextSave(BaseModel):
+    user: str
+    context: dict
+
+@app.post("/aos/context/save")
+def save_aos_context(body: AOSContextSave):
+    if not body.user:
+        return {"status": "ok"}
+    aos_ctx_col.update_one(
+        {"user": body.user},
+        {"$set": {"context": body.context, "updated_at": datetime.now().isoformat()}},
+        upsert=True
+    )
+    return {"status": "ok"}
+
+# ── GET /aos/context ──────────────────────────────────────
+@app.get("/aos/context")
+def get_aos_context(user: str):
+    if not user:
+        return {"context": {}}
+    doc = aos_ctx_col.find_one({"user": user}, {"_id": 0})
+    return {"context": doc.get("context", {}) if doc else {}}
+
+# ── POST /aos/chat ────────────────────────────────────────
+class AOSMessage(BaseModel):
+    message: str
+    user: str = ""
+    history: list = []
+    session_context: dict = {}   # financial facts extracted in this session
+
+@app.post("/aos/chat")
+def aos_chat(body: AOSMessage):
+    import re as _re
+
+    # ── Normalise message (typo-tolerant) ───────────────
+    raw_msg   = body.message.strip()
+    msg_lower = raw_msg.lower()
+
+    # Common typo/shorthand normalisation
+    typo_map = {
+        "thnx":"thanks","thx":"thanks","ty":"thanks","tq":"thank you",
+        "hw":"how","wht":"what","pls":"please","plz":"please","plss":"please",
+        "kya":"what","kaisa":"how","batao":"tell me","chahiye":"want",
+        "karo":"do","karna":"to do","mera":"my","mujhe":"me",
+        "salary":"salary","sallary":"salary","salry":"salary",
+        "invst":"invest","invesment":"investment","investement":"investment",
+        "savng":"saving","saveing":"saving","sving":"saving",
+        "buget":"budget","budjet":"budget","budgit":"budget",
+        "expence":"expense","expnse":"expense",
+        "insurence":"insurance","insuranse":"insurance",
+        "retirment":"retirement","retiremen":"retirement",
+    }
+    words_norm = []
+    for w in msg_lower.split():
+        words_norm.append(typo_map.get(w, w))
+    msg_normalised = " ".join(words_norm)
+
+    # ── Generic / social messages ─────────────────────
+    greetings = ["hi","hello","hey","hii","helo","heya","namaste","namaskar","good morning","good afternoon","good evening","good night","howdy"]
+    thanks_words = ["thanks","thank you","thank u","tq","thnx","thx","ty","dhanyawad","shukriya","cheers"]
+    bye_words = ["bye","goodbye","see you","take care","ok bye","good bye","later","cya"]
+    praise_words = ["great","awesome","nice","good","helpful","excellent","perfect","amazing","wonderful","superb","brilliant","outstanding","fantastic","well done","good job","thank you so much","very helpful"]
+
+    if any(g == msg_lower.strip() or msg_lower.strip().startswith(g + " ") or msg_lower.strip().endswith(" " + g) for g in greetings):
+        hour = datetime.now().hour
+        time_greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
+        name_part = f", {body.user}" if body.user else ""
+        return {"reply": f"""{time_greet}{name_part}! 👋 Great to have you here!
+
+I'm **A.O.S** — your personal AI financial advisor inside ETMS. How can I help you today?
+
+You can ask me about:
+• 💰 **Saving money** — *"How do I save Rs.10,000/month?"*
+• 🧾 **Tax saving** — *"How to save tax under 80C?"*
+• 📈 **Investing** — *"Where should I invest Rs.5,000/month?"*
+• 📊 **Budgeting** — *"Make a budget for Rs.50,000 salary"*
+• 🔍 **ETMS help** — *"Where is the dark mode?"*
+
+What's on your mind? 😊""", "source": "social", "session_context": {}}
+
+    if any(t in msg_lower for t in thanks_words):
+        return {"reply": "You're very welcome! 😊 Happy to help anytime. If you have more finance questions or need ETMS guidance, I'm always here!\n\nIs there anything else you'd like to know? 💪", "source": "social", "session_context": {}}
+
+    if any(b in msg_lower for b in bye_words):
+        return {"reply": f"Goodbye{', ' + body.user if body.user else ''}! 👋 Take care, and remember — small financial steps today lead to big results tomorrow! Feel free to come back anytime. 🌟", "source": "social", "session_context": {}}
+
+    if any(p in msg_lower for p in praise_words) and len(msg_lower.split()) <= 5:
+        return {"reply": "Thank you, that means a lot! 😊 I'm here whenever you need financial guidance. Is there anything else you'd like help with?", "source": "social", "session_context": {}}
+
+    # ── Extract financial context from current message ──
+    # (salary, investments, goals mentioned by user in chat)
+    def extract_financial_facts(text, existing_ctx):
+        ctx = dict(existing_ctx)  # copy existing
+        t = text.lower().replace(",","").replace("₹","").replace("rs.","rs ").replace("rupees","").replace("rupee","")
+        nums = [int(n) for n in _re.findall(r"\b(\d{3,8})\b", t) if 1000 <= int(n) <= 10000000]
+
+        # Extract salary/income
+        if any(w in t for w in ["salary","income","earn","package","ctc","take home","per month"]):
+            if nums:
+                ctx["salary"] = max(nums)
+
+        # Extract savings target
+        if any(w in t for w in ["save","saving","savings","bachana","want to save"]):
+            if nums:
+                ctx["savings_target"] = min(nums) if len(nums) > 1 else nums[0]
+
+        # Extract investment amount
+        if any(w in t for w in ["invest","sip","put","mutual fund","ppf","nps"]):
+            if nums:
+                ctx["investment_amount"] = nums[0]
+
+        # Extract age
+        age_match = _re.search(r"\b(1[8-9]|[2-6]\d)\s*(?:years?|yr|yrs)?\s*old\b|\baged?\s*(1[8-9]|[2-6]\d)\b|\bi am (1[8-9]|[2-6]\d)\b", t)
+        if age_match:
+            age_str = next(g for g in age_match.groups() if g)
+            ctx["age"] = int(age_str)
+
+        # Extract goal
+        if any(w in t for w in ["house","car","wedding","education","retire","vacation","travel","child","daughter","son"]):
+            for goal in ["house","car","wedding","education","retirement","vacation","travel"]:
+                if goal in t:
+                    ctx["financial_goal"] = goal
+                    break
+
+        # Extract risk profile
+        if any(w in t for w in ["safe","conservative","low risk","no risk","guaranteed"]):
+            ctx["risk_profile"] = "conservative"
+        elif any(w in t for w in ["moderate","balanced","medium risk"]):
+            ctx["risk_profile"] = "moderate"
+        elif any(w in t for w in ["aggressive","high risk","equity","stocks","high return"]):
+            ctx["risk_profile"] = "aggressive"
+
+        return ctx
+
+    # Merge: DB context + session context + extracted from this message
+    session_ctx = dict(body.session_context)
+    session_ctx = extract_financial_facts(msg_lower, session_ctx)
+
+    # Save updated context to DB asynchronously (non-blocking)
+    if body.user and session_ctx:
+        try:
+            aos_ctx_col.update_one(
+                {"user": body.user},
+                {"$set": {"context": session_ctx, "updated_at": datetime.now().isoformat()}},
+                upsert=True
+            )
+        except:
+            pass
+
+    # ── Build personalised context string ───────────────
+    user_txn_context = ""
+    if body.user:
+        try:
+            all_txns = list(txns_col.find({"user": body.user}, {"_id": 0}))
+            if all_txns:
+                income  = sum(float(t["amount"]) for t in all_txns if float(t["amount"]) > 0)
+                expense = sum(abs(float(t["amount"])) for t in all_txns if float(t["amount"]) < 0)
+                savings = income - expense
+                savings_rate = round((savings/income)*100,1) if income > 0 else 0
+                from collections import defaultdict
+                cats = defaultdict(float)
+                for t in all_txns:
+                    if float(t["amount"]) < 0:
+                        cats[t["category"].split(" — ")[0].strip()] += abs(float(t["amount"]))
+                top_cats = sorted(cats.items(), key=lambda x: x[1], reverse=True)[:5]
+                top_str  = ", ".join([f"{c}: Rs.{a:,.0f}" for c,a in top_cats])
+                user_txn_context = f"""
+ETMS TRANSACTION DATA:
+- Total Income recorded: Rs.{income:,.0f}
+- Total Expense recorded: Rs.{expense:,.0f}
+- Net Savings: Rs.{savings:,.0f} ({savings_rate}% savings rate)
+- Transactions count: {len(all_txns)}
+- Top expense categories: {top_str or 'None yet'}"""
+        except:
+            pass
+
+    # Build session context string
+    ctx_parts = []
+    if session_ctx.get("salary"):        ctx_parts.append(f"Monthly salary: Rs.{session_ctx['salary']:,}")
+    if session_ctx.get("savings_target"):ctx_parts.append(f"Savings target: Rs.{session_ctx['savings_target']:,}/month")
+    if session_ctx.get("investment_amount"): ctx_parts.append(f"Investment amount: Rs.{session_ctx['investment_amount']:,}/month")
+    if session_ctx.get("age"):           ctx_parts.append(f"Age: {session_ctx['age']} years")
+    if session_ctx.get("financial_goal"):ctx_parts.append(f"Financial goal: {session_ctx['financial_goal']}")
+    if session_ctx.get("risk_profile"):  ctx_parts.append(f"Risk profile: {session_ctx['risk_profile']}")
+    session_ctx_str = "\nSESSION CONTEXT (mentioned by user in this chat):\n" + "\n".join(f"- {p}" for p in ctx_parts) if ctx_parts else ""
+
+    # ── Build conversation history (last 12 messages) ───
+    history_text = ""
+    if body.history:
+        for msg in body.history[-12:]:
+            role = "User" if msg.get("role") == "user" else "A.O.S"
+            history_text += f"{role}: {msg.get('content','')[:300]}\n"
+
+    # ── System prompt ────────────────────────────────────
+    system_prompt = f"""You are A.O.S (Accounting Overflows System), a highly intelligent AI Chartered Accountant and financial assistant built into ETMS (Expense Tracker Management System) for Indian users.
+
+PERSONALITY:
+- Warm, professional, deeply knowledgeable — like a CA friend who genuinely cares
+- Use simple language for complex financial concepts
+- Be specific with numbers and examples (use Rs., Indian context)
+- Remember everything discussed in this conversation
+- Handle typos and grammatical mistakes gracefully — always understand the intent
+- For short/unclear messages, ask ONE specific clarifying question
+- Celebrate wins, gently correct mistakes, always encourage
+
+CAPABILITIES (handle ALL of these):
+1. Savings planning with exact monthly budgets
+2. Tax saving (80C, 80D, 80CCD, HRA, LTA, NPS, 80G — with specific amounts)
+3. Investment advice (SIP, ELSS, PPF, NPS, FD, Index Funds, REITs, Gold)
+4. Budget creation (50-30-20, zero-based, custom)
+5. Debt management (credit card, loans, EMI optimisation)
+6. Retirement corpus planning (with age-based calculations)
+7. Insurance guidance (term life, health, ULIP avoidance)
+8. Emergency fund building
+9. ETMS app navigation (exact step-by-step for every feature)
+10. Financial goal planning (house, car, education, travel)
+11. Crypto / trading risk awareness (Indian tax implications)
+
+CRITICAL RULES:
+- ALWAYS answer the CURRENT question. Use context/history to personalise but don't repeat past answers.
+- If user switches topic, switch completely — don't mix topics.
+- Remember facts from conversation: if they mentioned Rs.1,20,000 salary earlier, use it.
+- Never say "I don't know" for finance questions — give best advice with appropriate caveats.
+- For ETMS navigation: give exact numbered steps.
+- Always add risk disclaimers for investment advice.
+- For tax: always add "consult a CA for your specific situation."
+
+ETMS NAVIGATION (for app help questions):
+- Dark Mode: Profile photo (top-right) → Dark Mode toggle in dropdown
+- Settings: Profile photo → Settings (colors, font, currency, notifications)  
+- Monthly Report: Reports tab → Load Charts → Generate Complete Report → Download PDF
+- Fraud Detector: Fraud Detector tab → paste message → Analyze for Fraud
+- Add Transaction: Dashboard → enter amount (+ for income, - for expense) → Add
+- Targets: Targets tab → Add Target → set category and amount
+- My Account: Profile photo → My Account
+- Sign Out: Profile photo → Sign Out
+{user_txn_context}
+{session_ctx_str}
+
+RECENT CONVERSATION (use for context, DO NOT repeat):
+{history_text}
+
+CURRENT MESSAGE FROM USER: {raw_msg}
+
+Respond now — be specific, helpful, warm, and professional:"""
+
+    # ── Try Gemini ───────────────────────────────────────
+    try:
+        resp = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=system_prompt
+        )
+        reply_text = resp.text.strip()
+
+        # ── Self-learning: store good Q&A pairs ──────────
+        if body.user and len(reply_text) > 100:
+            try:
+                # Store as training example if it's a substantive financial response
+                financial_keywords = ["rs.","invest","save","tax","budget","sip","ppf","elss","nps","insurance","loan","emi","retire","emergency fund"]
+                if any(kw in reply_text.lower() for kw in financial_keywords):
+                    aos_learn_col.update_one(
+                        {"question_hash": hash(raw_msg.lower()[:100])},
+                        {"$set": {
+                            "question": raw_msg[:500],
+                            "answer": reply_text[:2000],
+                            "used_count": 1,
+                            "created_at": datetime.now().isoformat(),
+                            "source": "gemini"
+                        }},
+                        upsert=True
+                    )
+            except:
+                pass
+
+        return {"reply": reply_text, "source": "ai", "session_context": session_ctx}
+
+    except Exception:
+        pass
+
+    # ── Check learned Q&A (self-training lookup) ─────────
+    try:
+        learned = list(aos_learn_col.find(
+            {"$text": {"$search": raw_msg[:100]}},
+            {"_id": 0, "question": 1, "answer": 1, "used_count": 1}
+        ).limit(3))
+        if learned:
+            # Find best match
+            best = max(learned, key=lambda x: x.get("used_count", 0))
+            if best.get("answer"):
+                aos_learn_col.update_one(
+                    {"question": best["question"]},
+                    {"$inc": {"used_count": 1}}
+                )
+                return {"reply": best["answer"], "source": "learned", "session_context": session_ctx}
+    except:
+        pass
+
+    # ══════════════════════════════════════════════════
+    # SMART FALLBACK — Intent engine (AI unavailable)
+    # Fixes: amounts from current msg only, strict intent
+    # ══════════════════════════════════════════════════
+    import re as _re
+
+    msg_lower = body.message.lower().strip()
+    msg_orig  = body.message.strip()
+
+    # ── Extract amounts from CURRENT message ONLY ────────
+    def extract_amounts_from(text):
+        t = text.replace(",","").replace("₹","").replace("rs.","").replace("rs ","")
+        t = t.replace("rupees","").replace("rupee","").replace("inr","")
+        nums = _re.findall(r"\b(\d{3,8})\b", t)
+        valid = [int(n) for n in nums if 1000 <= int(n) <= 10000000]
+        return sorted(set(valid), reverse=True)
+
+    amounts = extract_amounts_from(msg_lower)
+
+    # ── Strict intent classifier (current message only) ──
+    def score_intent(keywords):
+        """Score how strongly the message matches an intent"""
+        return sum(1 for k in keywords if k in msg_lower)
+
+    # Define intents with their keywords
+    INTENTS = {
+        "savings_plan":   ["save","saving","savings","bachana","paisa bacha","bachat","how to save","save money","savings plan","monthly save","save per month","want to save"],
+        "budget":         ["budget","budgeting","budget plan","monthly plan","plan my expense","how much to spend","50 30 20","50-30-20","allocation","distribute salary","salary plan"],
+        "tax":            ["tax","80c","80d","hra","tds","itr","income tax","save tax","tax deduction","80ccd","nps tax","tax saving","tax slab","tax return","tax benefit","section 80"],
+        "investment":     ["invest","investment","sip","mutual fund","mf","fd","ppf","nps","elss","share","stock","nifty","sensex","where to invest","portfolio","return","grow money","wealth","kahan lagaun","lump sum","index fund","equity","debt fund"],
+        "emergency_fund": ["emergency fund","emergency","contingency","rainy day","safety net","buffer fund","liquid fund","unexpected expense"],
+        "debt":           ["loan","emi","debt","credit card","borrow","interest","repay","outstanding","personal loan","home loan","car loan","balance transfer","credit score","cibil"],
+        "retirement":     ["retire","retirement","pension","old age","corpus","provident fund","epf","vpf","long term","60 years","nps retirement"],
+        "etms_help":      ["setting","settings","dark mode","theme","account","profile","report","monthly report","fraud","fraud detector","transaction","add expense","add income","logout","sign out","navigation","how to use","where is","find","locate","help me find","where do i","can you show","how do i"],
+        "crypto":         ["crypto","bitcoin","ethereum","blockchain","nft","defi","usdt","altcoin","coin","token","web3","binance"],
+        "insurance":      ["insurance","term plan","life insurance","health insurance","mediclaim","policy","cover","premium","lic","ulip","sum assured"],
+    }
+
+    # Score each intent
+    scores = {intent: score_intent(keywords) for intent, keywords in INTENTS.items()}
+    best_intent = max(scores, key=scores.get)
+    best_score  = scores[best_intent]
+
+    # ── Response generators ───────────────────────────────
+
+    def savings_response():
+        if len(amounts) >= 2:
+            income_val = amounts[0]; save_val = amounts[1]
+        elif len(amounts) == 1:
+            if any(w in msg_lower for w in ["income","salary","earn","kama","milta","get"]):
+                income_val = amounts[0]; save_val = round(income_val * 0.25)
+            else:
+                save_val = amounts[0]; income_val = round(save_val * 4)
+        else:
+            income_val, save_val = 50000, 12500
+        save_pct = round((save_val / income_val) * 100) if income_val > 0 else 25
+        needs = round(income_val * 0.50)
+        wants = max(0, income_val - needs - save_val)
+        sip   = round(save_val * 0.50); ppf = round(save_val * 0.25); ef = round(save_val * 0.25)
+        return f"""Here's your **personalised savings plan** — income **Rs.{income_val:,}/month**, save target **Rs.{save_val:,}/month** ({save_pct}%):
+
+**📊 Monthly Budget Breakdown:**
+• 🏠 **Needs — Rs.{needs:,}** *(rent, groceries, transport, EMI, insurance)*
+• 🎉 **Wants — Rs.{wants:,}** *(dining, entertainment, shopping)*
+• 💰 **Savings — Rs.{save_val:,}** *({save_pct}% — {"🌟 Excellent!" if save_pct>=30 else "👍 Good!" if save_pct>=20 else "💪 Keep pushing!"})*
+
+**✅ Your 5-Step Action Plan:**
+
+**1. Auto-transfer on salary day 🏦**
+The moment salary arrives, move Rs.{save_val:,} to a separate account immediately. "Pay yourself first" — this one habit changes everything.
+
+**2. Split savings smartly 📈**
+• Rs.{sip:,}/month → Nifty 50 Index Fund SIP *(wealth building)*
+• Rs.{ppf:,}/month → PPF *(guaranteed 7.1%, tax-free)*
+• Rs.{ef:,}/month → Emergency fund *(until you have 4 months saved)*
+
+**3. Cut 2 recurring "want" expenses 🎯**
+Review ETMS Monthly Report — most people find Rs.{round(income_val*0.05):,}–{round(income_val*0.08):,}/month in avoidable spends.
+
+**4. Track every rupee in ETMS 📱**
+Dashboard → add every transaction → Monthly Report shows exactly where money goes.
+
+**5. 🧾 Tax bonus:** Rs.{min(12500,save_val):,}/month in ELSS = full 80C deduction = saves Rs.{round(min(150000,save_val*12)*0.20):,}/year in tax!
+
+Want a deeper breakdown of any step? 😊"""
+
+    def budget_response():
+        income_val = amounts[0] if amounts else 50000
+        return f"""Here's a **complete monthly budget** for Rs.{income_val:,} using the 50-30-20 rule:
+
+**🏠 NEEDS — Rs.{round(income_val*0.50):,}/month (50%)**
+• Rent/EMI: Rs.{round(income_val*0.25):,}
+• Groceries: Rs.{round(income_val*0.10):,}
+• Transport: Rs.{round(income_val*0.07):,}
+• Utilities + phone: Rs.{round(income_val*0.04):,}
+• Insurance: Rs.{round(income_val*0.04):,}
+
+**🎉 WANTS — Rs.{round(income_val*0.30):,}/month (30%)**
+• Dining out: Rs.{round(income_val*0.08):,}
+• Entertainment: Rs.{round(income_val*0.05):,}
+• Shopping: Rs.{round(income_val*0.09):,}
+• Subscriptions: Rs.{round(income_val*0.04):,}
+• Personal care: Rs.{round(income_val*0.04):,}
+
+**💰 SAVINGS — Rs.{round(income_val*0.20):,}/month (20%)**
+• Emergency fund: Rs.{round(income_val*0.07):,}
+• Nifty 50 SIP: Rs.{round(income_val*0.08):,}
+• PPF / Tax saving: Rs.{round(income_val*0.05):,}
+
+**💡 Pro Tips:**
+• Track everything in ETMS Dashboard
+• Use Monthly Report to compare actual vs budget
+• Increase savings rate by 1% every 3 months
+
+Want me to adjust this for your actual income amount? 😊"""
+
+    def tax_response():
+        income_val = amounts[0] if amounts else 60000
+        annual = income_val * 12
+        return f"""Here's your **complete tax saving guide** for FY 2025-26:
+
+**📌 Section 80C — Up to Rs.1,50,000 deduction**
+• **ELSS Mutual Funds** — Best choice. 3-year lock-in, 10-14% historical returns
+• **PPF** — Safest. 7.1% guaranteed, completely tax-free returns
+• **EPF** — Already deducted for salaried employees (counts toward 80C)
+• **5-year tax-saving FD** — 6-7% fixed returns
+• **Life insurance premiums** — Term plan premium counts
+
+**📌 Section 80D — Health Insurance (up to Rs.75,000)**
+• Self + family premium: Rs.25,000 deduction
+• Senior citizen parents: Up to Rs.50,000 additional
+
+**📌 Section 80CCD(1B) — NPS Extra Rs.50,000**
+*Over and above 80C!* Invest Rs.50,000 in NPS for additional deduction.
+
+**📌 HRA Exemption** *(if you pay rent)*
+Claim exemption — formula: minimum of actual HRA, 50%/40% of salary, or rent paid minus 10% of salary.
+
+**📌 Section 80G — Donations**
+Donations to eligible charities (50%-100% deduction)
+
+**For Rs.{income_val:,}/month (Rs.{annual:,}/year):**
+• Invest Rs.{min(12500, round(income_val*0.20)):,}/month in ELSS + PPF to max 80C
+• Rs.25,000 health insurance for 80D
+• Rs.4,167/month in NPS for extra Rs.50,000 deduction
+• **Total potential saving: Rs.{round((min(150000,annual*0.20)+75000+50000)*0.20):,}–{round((min(150000,annual*0.20)+75000+50000)*0.30):,}/year** 🎉
+
+⚠️ *Consult a CA for your exact tax slab calculation.*
+
+Want details on any specific section? 😊"""
+
+    def investment_response():
+        monthly = amounts[0] if amounts else 5000
+        years   = 20
+        corpus  = round(monthly * 12 * ((1.01**240-1)/0.01))
+        return f"""Here's your **complete investment guide** for Rs.{monthly:,}/month:
+
+**📋 Checklist before investing:**
+1. ✅ Emergency fund ready? (3-4 months expenses)
+2. ✅ Term insurance? (10-15x annual income)
+3. ✅ Health insurance? (min Rs.5-10 lakh)
+*If all yes — you're ready!*
+
+**📈 Recommended allocation for Rs.{monthly:,}/month:**
+
+| Fund Type | Amount | Purpose |
+| Nifty 50 Index Fund SIP | Rs.{round(monthly*0.45):,} | Core wealth building |
+| ELSS Fund | Rs.{round(monthly*0.25):,} | Tax saving + growth |
+| PPF | Rs.{round(monthly*0.20):,} | Guaranteed, tax-free |
+| NPS Tier-2 | Rs.{round(monthly*0.10):,} | Retirement |
+
+**⏰ Time horizon matters:**
+• **1-3 years** → Liquid funds, debt MF, FD
+• **3-7 years** → Balanced/hybrid funds
+• **7+ years** → Pure equity index funds *(10-14% historical)*
+
+**🚀 Power of compounding:**
+Rs.{monthly:,}/month SIP for {years} years at 12% = **Rs.{corpus:,}**!
+
+**🌟 Start today with:**
+1. Open a Zerodha/Groww account
+2. Start Rs.{min(500, monthly//10):,}/month SIP in Nifty 50 Index Fund
+3. Enable auto-debit on salary date
+
+⚠️ *Investments carry market risk. Past returns ≠ future returns.*
+
+Which investment type would you like to explore further? 😊"""
+
+    def etms_help_response():
+        nav_map = {
+            ("dark mode","night mode","dark theme"): """To enable **Dark Mode** in ETMS:
+1. Look at the **top-right corner** of the screen
+2. Click your **profile photo/avatar** (shows your initial letter)
+3. In the dropdown menu, you'll see a **🌙 Dark Mode** toggle
+4. Click it — the entire app switches to dark theme instantly!
+
+Alternatively: Profile photo → **⚙️ Settings** → Appearance section → Dark Mode toggle.
+Your preference is saved automatically! 🌙""",
+            ("settings","theme color","accent","font size","color"): """To open **Settings** in ETMS:
+1. Click your **profile photo** (top-right corner)
+2. Click **⚙️ Settings** in the dropdown
+
+Inside Settings you can:
+• 🎨 Change accent color (6 color options)
+• 🔤 Adjust font size (Small/Medium/Large)
+• 🌙 Toggle Dark Mode
+• 💰 Change currency (INR/USD/EUR/GBP)
+• 🔔 Set notification preferences""",
+            ("monthly report","generate report","load chart","download pdf","report"): """To generate a **Monthly Report**:
+1. Click **📊 Reports** in the top navigation bar
+2. Select the **month** and **year** from dropdowns
+3. Click **Load Charts** → 5 interactive charts appear
+4. Click **Generate Complete Report** → AI analysis generates
+5. Click **Download PDF** → saves professional PDF to your device
+
+The report includes income vs expense charts, category breakdown, spending behaviour insights, and AI recommendations! 📊""",
+            ("fraud detector","fraud","suspicious","scam","check message"): """To use the **Fraud Detector**:
+1. Click **🔍 Fraud Detector** in the top navigation bar
+2. **Paste** the suspicious SMS, email, WhatsApp message, or URL in the text box
+3. OR **drag and drop** an image/file
+4. Click **Analyze for Fraud**
+5. Get a fraud score (0-100), red flags, safe signals, and detailed analysis
+6. Download a professional fraud report PDF
+
+The detector checks for 15 fraud patterns including lottery scams, phishing, fake jobs, and crypto fraud! 🔍""",
+            ("add transaction","add expense","add income","how to add","transaction"): """To **add a transaction** in ETMS:
+1. Go to **🏠 Dashboard** (click Dashboard in the nav bar)
+2. In the transaction form on the right:
+   - Enter **amount**: positive number for income (e.g., 50000), negative for expense (e.g., -500)
+   - Select or type a **category** (e.g., Food, Rent, Salary)
+3. Click **Add**
+
+💡 Tip: Use the **AI Extract from SMS/Email** button to auto-fill from bank messages!""",
+            ("targets","set target","spending limit","goal","saving goal"): """To set **Financial Targets**:
+1. Click **🎯 Targets** in the top navigation bar
+2. Click **Add Target**
+3. Choose:
+   - **Spending Limit** — max amount to spend in a category
+   - **Savings Goal** — target amount to save
+4. Set category, target amount, and save
+5. ETMS automatically tracks your progress against targets!""",
+            ("aos","chatbot","a.o.s","this chatbot"): """You're already using **A.O.S** — Accounting Overflows System! 😊
+I'm the AI financial assistant built into ETMS.
+
+**What I can help with:**
+• 💰 Tax saving strategies (80C, 80D, NPS, HRA)
+• 📊 Budget planning and expense limits
+• 📈 Investment advice (SIP, PPF, ELSS, NPS)
+• 🔍 Finding any ETMS feature
+• 🧾 Financial goal planning
+
+Just ask me anything! You can access me anytime by clicking **🤖 A.O.S** in the top navigation bar.""",
+            ("my account","profile","username","account detail"): """To view **My Account**:
+1. Click your **profile photo** (top-right corner)
+2. Click **👤 My Account**
+
+You'll see:
+• Your profile details (username, name, email)
+• Financial profile (income, budget goals)
+• Transaction statistics (total income, expense, count)
+• Security settings""",
+            ("sign out","logout","log out","how to logout"): """To **sign out** of ETMS:
+1. Click your **profile photo** (top-right corner)
+2. Scroll to the bottom of the dropdown
+3. Click **🚪 Sign Out**
+
+Your data is safely saved and you can log back in anytime!""",
+        }
+        for keywords, response in nav_map.items():
+            if any(kw in msg_lower for kw in keywords):
+                return response
+        return f"""I'm here to help you navigate ETMS! You asked: *"{msg_orig}"*
+
+Here's a quick guide to all sections:
+• **🏠 Dashboard** → Add transactions, view balance, AI analysis
+• **📊 Reports** → Monthly charts, AI report, PDF download
+• **🎯 Targets** → Set spending limits & saving goals
+• **🔍 Fraud Detector** → Analyze suspicious messages
+• **🤖 A.O.S** → This chatbot — always here to help!
+• **Profile photo** (top-right) → Settings, Dark Mode, My Account, Sign Out
+
+What specific feature are you looking for? 😊"""
+
+    def emergency_fund_response():
+        income_val = amounts[0] if amounts else 40000
+        target = income_val * 4
+        monthly_save = round(target / 6)
+        return f"""**Emergency Fund — Your #1 Financial Priority** 🛡️
+
+**What is it?** Money set aside ONLY for real emergencies: job loss, medical crisis, urgent repairs. NOT for vacations or shopping!
+
+**How much?**
+• Minimum: 3 months expenses
+• Recommended: **4-6 months expenses**
+• For Rs.{income_val:,}/month → target **Rs.{target:,}**
+
+**Where to keep it?** *(in order of recommendation)*
+1. ✅ **Liquid Mutual Fund** — 4-5% returns, withdraw in 1 business day
+2. ✅ **High-yield savings account** — 3-4%, instant access
+3. ❌ NOT stocks (can crash when you need it most!)
+4. ❌ NOT FD (penalty for early withdrawal)
+
+**Building it:**
+• Save Rs.{monthly_save:,}/month → fully built in **6 months** 🎯
+• Add windfalls (bonus, gift money) directly to it
+• Set up auto-transfer on salary day — it should feel "invisible"
+
+**Golden Rule:** Once built, never invest this money. It's not supposed to grow — it's supposed to be there when everything goes wrong.
+
+Want help figuring out your monthly expenses to set the right target? 😊"""
+
+    def debt_response():
+        return """**Smart Debt Management** 💳
+
+**Step 1 — List everything:**
+| Debt | Amount | Interest Rate | EMI |
+List every debt with these 4 columns.
+
+**Step 2 — Choose your strategy:**
+
+**🔥 Avalanche Method** *(saves most money)*
+Pay minimums on all. Extra money → highest interest rate first.
+Best for: Credit cards (36-42%), personal loans
+
+**❄️ Snowball Method** *(best motivation)*
+Pay minimums on all. Extra money → smallest balance first.
+Best for: People who need quick wins to stay motivated
+
+**🚨 Credit Card — Priority #1:**
+• 36-42% annual interest — the most expensive debt
+• Always pay **full amount** (minimum payment = debt trap)
+• If overwhelmed: balance transfer to 0% card
+
+**💡 Smart moves:**
+• Prepay home loan with annual bonus → saves lakhs in interest
+• Never take personal loan to repay credit card — negotiate with bank instead
+• Check if refinancing at lower rate is possible
+
+**While in debt:** Pause discretionary investments. Paying 40% credit card debt = guaranteed 40% return!
+
+Share your debt details and I'll help create a specific payoff plan! 😊"""
+
+    def retirement_response():
+        income_val = amounts[0] if amounts else 50000
+        monthly_invest = round(income_val * 0.15)
+        return f"""**Retirement Planning** 🌅
+
+**The power of starting early:**
+• Rs.5,000/month from age **25** → Rs.3.5 crore at 60
+• Rs.5,000/month from age **35** → Rs.1.1 crore at 60
+*Same amount, 10 years difference = 3x less wealth!*
+
+**For Rs.{income_val:,}/month — recommended Rs.{monthly_invest:,}/month (15%) for retirement:**
+
+| Tool | Amount | Benefit |
+| NPS Tier-1 | Rs.{round(monthly_invest*0.40):,} | Extra 80C Rs.50,000 + pension |
+| Equity Index Fund SIP | Rs.{round(monthly_invest*0.40):,} | Inflation-beating growth |
+| PPF | Rs.{round(monthly_invest*0.20):,} | Tax-free, guaranteed |
+
+**Estimating your corpus need:**
+Monthly expenses needed × 300 = rough corpus needed
+e.g., Rs.50,000/month needs → Rs.1.5 crore corpus
+
+**Don't forget:**
+• Employer EPF is also retirement savings
+• Health insurance becomes critical post-retirement
+• Review and rebalance portfolio every year
+
+⚠️ *A certified financial planner can create a precise retirement plan for your situation.*
+
+How many years until you plan to retire? I'll calculate your target corpus! 😊"""
+
+    def crypto_response():
+        return """**Cryptocurrency in Indian Context** ₿
+
+**Regulatory status (2025):**
+• Crypto is legal to buy/sell in India
+• 30% flat tax on gains (no deductions, no loss offset)
+• 1% TDS on transactions above Rs.50,000
+• Must report in ITR under "income from virtual digital assets"
+
+**My honest assessment as your CA friend:**
+Crypto is highly speculative — not traditional "investment." Treat it like this:
+• **Maximum allocation:** 5-10% of investable money
+• **Only money you can afford to lose 100%**
+• **Not for emergency fund or short-term goals**
+
+**If you still want to invest:**
+1. Use regulated Indian platforms (CoinDCX, WazirX, Zebpay)
+2. Start with Bitcoin or Ethereum only (most established)
+3. Use SIP approach — buy fixed amount monthly
+4. Keep records for tax filing
+
+**Better alternatives for wealth building:**
+Nifty 50 Index Fund has given 12-14% CAGR over 20 years with much lower risk.
+
+What's your investment goal? I can suggest the right instrument! 😊"""
+
+    def insurance_response():
+        income_val = amounts[0] if amounts else 50000
+        annual = income_val * 12
+        cover = annual * 15
+        return f"""**Insurance Planning Guide** 🛡️
+
+**Two insurances EVERYONE must have:**
+
+**1. Term Life Insurance**
+• Cover needed: **Rs.{cover:,}** (15x annual income of Rs.{annual:,})
+• Premium for Rs.1 crore cover: Rs.8,000-15,000/year at age 25-30
+• Buy ONLY term plan — not endowment/ULIP (they're expensive + low returns)
+• Best options: LIC Tech Term, HDFC Click 2 Protect, ICICI iProtect Smart
+
+**2. Health Insurance (Mediclaim)**
+• Minimum: Rs.5-10 lakh individual cover
+• Better: Rs.10-25 lakh family floater
+• Premium: Rs.8,000-25,000/year depending on age
+• Top-up plans can increase cover cheaply
+
+**What to AVOID:**
+• ❌ ULIP (Unit Linked Insurance Plan) — poor returns + high charges
+• ❌ Endowment/money-back plans — better to buy term + invest separately
+• ❌ Insurance as investment — it's protection, not wealth building
+
+**Section 80D benefit:** Health insurance premiums up to Rs.25,000 (Rs.50,000 for senior citizens) are tax deductible!
+
+For Rs.{income_val:,}/month income — budget Rs.{round(income_val*0.03):,}-{round(income_val*0.05):,}/month for both insurances.
+
+Need help comparing specific plans? 😊"""
+
+    # ── Map best intent to response ──────────────────────
+    if best_score == 0:
+        # No clear intent detected
+        return {"reply": f"""I want to make sure I give you the most helpful answer for: *"{msg_orig}"*
+
+As your **AI financial advisor**, I can help with:
+
+• **💰 Savings plan** — *"My income is Rs.X, how do I save Rs.Y/month?"*
+• **📊 Budget planning** — *"Create a budget for Rs.50,000 salary"*
+• **🧾 Tax saving** — *"How do I save tax legally in India?"*
+• **📈 Investments** — *"Where should I invest Rs.5,000/month?"*
+• **🛡️ Emergency fund** — *"How do I build an emergency fund?"*
+• **💳 Debt management** — *"How do I pay off my credit card?"*
+• **🌅 Retirement planning** — *"How do I plan for retirement?"*
+• **🔍 ETMS help** — *"Where is dark mode?" / "How do I add a transaction?"*
+
+Just ask naturally — I'll understand! 😊""", "source": "clarify", "session_context": {}}
+
+    # Route to best matching response
+    response_map = {
+        "savings_plan":   savings_response,
+        "budget":         budget_response,
+        "tax":            tax_response,
+        "investment":     investment_response,
+        "emergency_fund": emergency_fund_response,
+        "debt":           debt_response,
+        "retirement":     retirement_response,
+        "etms_help":      etms_help_response,
+        "crypto":         crypto_response,
+        "insurance":      insurance_response,
+    }
+
+    reply_text = response_map[best_intent]()
+    return {"reply": reply_text, "source": "smart", "session_context": {}}
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
