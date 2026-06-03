@@ -149,6 +149,175 @@ async function submitSignup() {
   }
 }
 
+/* ─── PROFILE MENU ───────────────────────────────── */
+function toggleProfileMenu() {
+  const dd = document.getElementById("profileDropdown");
+  const isOpen = dd.classList.contains("open");
+  closeAllPanels();
+  if (!isOpen) {
+    dd.classList.add("open");
+    setTimeout(() => document.addEventListener("click", closeProfileOnOutside), 0);
+  }
+}
+
+function closeProfileMenu() {
+  document.getElementById("profileDropdown").classList.remove("open");
+  document.removeEventListener("click", closeProfileOnOutside);
+}
+
+function closeProfileOnOutside(e) {
+  const wrap = document.getElementById("profileWrap");
+  if (!wrap.contains(e.target)) closeProfileMenu();
+}
+
+function closeAllPanels() {
+  closeProfileMenu();
+  closeSettings();
+  closeMyAccount();
+  closeNotif();
+}
+
+/* ─── DARK MODE ─────────────────────────────────── */
+let isDark = localStorage.getItem("etms_dark") === "true";
+
+function applyDarkMode(dark) {
+  document.documentElement.classList.toggle("dark", dark);
+  const toggle    = document.getElementById("darkModeToggle");
+  const sToggle   = document.getElementById("settingsDarkToggle");
+  const label     = document.getElementById("darkModeLabel");
+  const icon      = document.getElementById("darkModeIcon");
+  if (toggle)  toggle.classList.toggle("active", dark);
+  if (sToggle) sToggle.classList.toggle("active", dark);
+  if (label)   label.textContent = dark ? "Light Mode" : "Dark Mode";
+  if (icon)    icon.innerHTML = dark
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`
+    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>`;
+  localStorage.setItem("etms_dark", dark);
+}
+
+function toggleDarkMode() {
+  isDark = !isDark;
+  applyDarkMode(isDark);
+}
+
+// Apply on load
+applyDarkMode(isDark);
+
+/* ─── ACCENT COLOR ──────────────────────────────── */
+function setAccent(color, dark) {
+  document.documentElement.style.setProperty("--blue", color);
+  document.documentElement.style.setProperty("--blue-dark", dark);
+  document.documentElement.style.setProperty("--blue-light", color + "18");
+  document.querySelectorAll(".swatch").forEach(s => s.classList.remove("active"));
+  event.target.classList.add("active");
+  localStorage.setItem("etms_accent", JSON.stringify({color, dark}));
+}
+
+// Apply saved accent
+const savedAccent = localStorage.getItem("etms_accent");
+if (savedAccent) { const a = JSON.parse(savedAccent); setAccent(a.color, a.dark); }
+
+/* ─── FONT SIZE ─────────────────────────────────── */
+function setFontSize(size) {
+  document.documentElement.style.fontSize = size + "px";
+  document.querySelectorAll(".fs-btn").forEach(b => b.classList.remove("active"));
+  event.target.classList.add("active");
+  localStorage.setItem("etms_fontsize", size);
+}
+const savedFs = localStorage.getItem("etms_fontsize");
+if (savedFs) document.documentElement.style.fontSize = savedFs + "px";
+
+/* ─── SETTINGS PANEL ────────────────────────────── */
+function openSettings() {
+  closeProfileMenu();
+  document.getElementById("settingsPanel").classList.add("open");
+  document.getElementById("settingsOverlay").classList.add("open");
+}
+function closeSettings() {
+  document.getElementById("settingsPanel")?.classList.remove("open");
+  document.getElementById("settingsOverlay")?.classList.remove("open");
+}
+
+/* ─── MY ACCOUNT PANEL ──────────────────────────── */
+function openMyAccount() {
+  closeProfileMenu();
+  // Populate account info
+  document.getElementById("accountAvatar").textContent = currentUser.charAt(0).toUpperCase();
+  document.getElementById("accountName").textContent   = currentUser;
+  document.getElementById("acUsername").textContent    = currentUser;
+  document.getElementById("pdAvatar").textContent      = currentUser.charAt(0).toUpperCase();
+  document.getElementById("pdName").textContent        = currentUser;
+  // Stats from transactions
+  if (allTransactions && allTransactions.length > 0) {
+    const income  = allTransactions.filter(t => parseFloat(t.amount) > 0).reduce((s,t) => s+parseFloat(t.amount), 0);
+    const expense = allTransactions.filter(t => parseFloat(t.amount) < 0).reduce((s,t) => s+Math.abs(parseFloat(t.amount)), 0);
+    document.getElementById("acTotalTxns").textContent    = allTransactions.length;
+    document.getElementById("acTotalIncome").textContent  = "₹" + income.toLocaleString("en-IN");
+    document.getElementById("acTotalExpense").textContent = "₹" + expense.toLocaleString("en-IN");
+  }
+  document.getElementById("accountPanel").classList.add("open");
+  document.getElementById("accountOverlay").classList.add("open");
+}
+function closeMyAccount() {
+  document.getElementById("accountPanel")?.classList.remove("open");
+  document.getElementById("accountOverlay")?.classList.remove("open");
+}
+
+/* ─── NOTIFICATIONS ─────────────────────────────── */
+let notifications = JSON.parse(localStorage.getItem("etms_notifs") || "[]");
+
+function toggleNotif() {
+  const panel = document.getElementById("notifPanel");
+  const isOpen = panel.classList.contains("open");
+  closeAllPanels();
+  if (!isOpen) {
+    panel.classList.add("open");
+    renderNotifications();
+    document.getElementById("notifDot").style.display = "none";
+    setTimeout(() => document.addEventListener("click", closeNotifOutside), 0);
+  }
+}
+function closeNotif() {
+  document.getElementById("notifPanel")?.classList.remove("open");
+  document.removeEventListener("click", closeNotifOutside);
+}
+function closeNotifOutside(e) {
+  const panel = document.getElementById("notifPanel");
+  const btn   = document.getElementById("notifBtn");
+  if (!panel?.contains(e.target) && !btn?.contains(e.target)) closeNotif();
+}
+function addNotification(msg, type="info") {
+  notifications.unshift({ msg, type, time: new Date().toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) });
+  notifications = notifications.slice(0, 10);
+  localStorage.setItem("etms_notifs", JSON.stringify(notifications));
+  document.getElementById("notifDot").style.display = "block";
+}
+function renderNotifications() {
+  const list = document.getElementById("notifList");
+  if (notifications.length === 0) {
+    list.innerHTML = `<div class="notif-empty"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><p>No notifications yet</p></div>`;
+    return;
+  }
+  const icons = { info:"💡", success:"✅", warning:"⚠️", error:"🚨" };
+  list.innerHTML = notifications.map(n => `
+    <div class="notif-item notif-${n.type}">
+      <span class="notif-icon">${icons[n.type]||"💡"}</span>
+      <div class="notif-content"><p class="notif-msg">${n.msg}</p><span class="notif-time">${n.time}</span></div>
+    </div>`).join("");
+}
+function clearNotifications() {
+  notifications = [];
+  localStorage.removeItem("etms_notifs");
+  renderNotifications();
+}
+
+/* ─── CONFIRM CLEAR DATA ────────────────────────── */
+function confirmClearData() {
+  if (confirm("⚠️ This will permanently delete ALL your transactions. This cannot be undone. Are you sure?")) {
+    alert("Data cleared! (Feature coming soon — connect to backend)");
+  }
+}
+
 /* ─── LOGIN ──────────────────────────────────────── */
 async function login() {
   const username = document.getElementById("username").value.trim();
@@ -166,7 +335,11 @@ async function login() {
       currentUser = username;
       document.getElementById("navUsername").textContent = username;
       document.getElementById("userAvatar").textContent  = username.charAt(0).toUpperCase();
+      document.getElementById("pdAvatar").textContent    = username.charAt(0).toUpperCase();
+      document.getElementById("pdName").textContent      = username;
+      document.getElementById("acUsername").textContent  = username;
       setGreeting();
+      addNotification(`Welcome back, ${username}! 👋`, "success");
       document.getElementById("loginPage").style.display = "none";
       document.getElementById("appPage").style.display   = "block";
       loadData();
@@ -181,10 +354,20 @@ async function login() {
 
 /* ─── LOGOUT ─────────────────────────────────────── */
 function logout() {
-  currentUser=""; allTransactions=[];
-  document.getElementById("list").innerHTML="";
-  document.getElementById("username").value="";
-  document.getElementById("password").value="";
+  // Save AOS history before logout
+  saveAOSHistory();
+  // Reset state
+  currentUser   = "";
+  allTransactions = [];
+  aosHistory    = [];
+  aosSessionCtx = {};
+  aosInitialized = false;
+  // Clear UI
+  const msgEl = document.getElementById("aosMessages");
+  if (msgEl) msgEl.innerHTML = "";
+  document.getElementById("list").innerHTML   = "";
+  document.getElementById("username").value  = "";
+  document.getElementById("password").value  = "";
   document.getElementById("appPage").style.display   = "none";
   document.getElementById("loginPage").style.display = "flex";
 }
@@ -192,11 +375,19 @@ function logout() {
 /* ─── NAV TABS ───────────────────────────────────── */
 function showSection(section, btn) {
   document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
+  if (btn) btn.classList.add("active");
   document.getElementById("dashboardSection").style.display = section === "dashboard" ? "block" : "none";
   document.getElementById("reportSection").style.display    = section === "report"    ? "block" : "none";
   document.getElementById("targetsSection").style.display   = section === "targets"   ? "block" : "none";
+  document.getElementById("fraudSection").style.display     = section === "fraud"     ? "block" : "none";
+  document.getElementById("aosSection").style.display       = section === "aos"       ? "block" : "none";
   if (section === "targets") loadTargets();
+  if (section === "aos" && !aosInitialized) { initAOS(); aosInitialized = true; }
+}
+
+function openAOS() {
+  const tab = document.querySelector(".nav-tab-aos");
+  showSection("aos", tab);
 }
 
 /* ─── TYPE TOGGLE ────────────────────────────────── */
@@ -1000,4 +1191,496 @@ function formatMarkdown(text) {
 
 function escapeHtml(str) {
   return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+/* ─── FRAUD DETECTOR ─────────────────────────────── */
+let fraudReportData = null;
+
+function handleFraudDrop(e) {
+  e.preventDefault();
+  document.getElementById("fraudDropZone").classList.remove("drag-over");
+  const files = e.dataTransfer.files;
+  if (files.length > 0) handleFraudFile(files[0]);
+}
+
+function handleFraudDragOver(e) {
+  e.preventDefault();
+  document.getElementById("fraudDropZone").classList.add("drag-over");
+}
+
+function handleFraudDragLeave() {
+  document.getElementById("fraudDropZone").classList.remove("drag-over");
+}
+
+function handleFraudFileInput(input) {
+  if (input.files.length > 0) handleFraudFile(input.files[0]);
+}
+
+function handleFraudFile(file) {
+  const reader = new FileReader();
+  const isImage = file.type.startsWith("image/");
+  const isPDF   = file.type === "application/pdf";
+  const isText  = file.type.startsWith("text/") || file.name.endsWith(".txt");
+
+  document.getElementById("fraudFileName").textContent = `📎 ${file.name}`;
+  document.getElementById("fraudFileInfo").style.display = "flex";
+
+  if (isImage) {
+    reader.onload = e => {
+      document.getElementById("fraudImagePreview").src = e.target.result;
+      document.getElementById("fraudImagePreviewWrap").style.display = "block";
+      document.getElementById("fraudFileData").value = e.target.result;
+      document.getElementById("fraudFileType").value = "image";
+    };
+    reader.readAsDataURL(file);
+  } else if (isText) {
+    reader.onload = e => {
+      document.getElementById("fraudInput").value = e.target.result;
+      document.getElementById("fraudFileData").value = "";
+      document.getElementById("fraudFileType").value = "text";
+    };
+    reader.readAsText(file);
+  } else if (isPDF) {
+    document.getElementById("fraudFileData").value = "";
+    document.getElementById("fraudFileType").value = "pdf";
+    document.getElementById("fraudInput").value = `[PDF file uploaded: ${file.name}]`;
+  } else {
+    reader.onload = e => {
+      document.getElementById("fraudInput").value = e.target.result;
+      document.getElementById("fraudFileData").value = "";
+      document.getElementById("fraudFileType").value = "text";
+    };
+    reader.readAsText(file);
+  }
+}
+
+function clearFraudFile() {
+  document.getElementById("fraudFileInfo").style.display    = "none";
+  document.getElementById("fraudImagePreviewWrap").style.display = "none";
+  document.getElementById("fraudFileData").value  = "";
+  document.getElementById("fraudFileType").value  = "";
+  document.getElementById("fraudFileName").textContent = "";
+  document.getElementById("fraudInput").value = "";
+}
+
+async function analyzeFraud() {
+  const text     = document.getElementById("fraudInput").value.trim();
+  const fileData = document.getElementById("fraudFileData").value;
+  const fileType = document.getElementById("fraudFileType").value;
+  const btn      = document.getElementById("fraudAnalyzeBtn");
+  const btnText  = document.getElementById("fraudAnalyzeBtnText");
+
+  if (!text && !fileData) {
+    showFraudError("Please enter a message, URL, or upload a file to analyze.");
+    return;
+  }
+
+  hideFraudError();
+  document.getElementById("fraudResult").style.display      = "none";
+  document.getElementById("fraudDownloadBtn").style.display = "none";
+  btn.disabled   = true;
+  btnText.textContent = "Analyzing…";
+
+  try {
+    const payload = { text, file_data: fileData, file_type: fileType, user: currentUser };
+    const res     = await fetch("/fraud/analyze", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload)
+    });
+    // Safely parse JSON
+    let data;
+    const raw = await res.text();
+    try { data = JSON.parse(raw); }
+    catch(e) { throw new Error("Server returned an unexpected response. Please try again."); }
+
+    if (!res.ok) throw new Error(data.detail || "Analysis failed. Please try again.");
+
+    fraudReportData = data;
+    renderFraudReport(data);
+    document.getElementById("fraudResult").style.display      = "block";
+    document.getElementById("fraudDownloadBtn").style.display = "inline-flex";
+    document.getElementById("fraudResult").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch(e) {
+    showFraudError("Error: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = "Analyze for Fraud";
+  }
+}
+
+function renderFraudReport(data) {
+  const score   = data.fraud_score;
+  const level   = data.risk_level;
+  const color   = score >= 80 ? "#f04438" : score >= 60 ? "#f04438" : score >= 40 ? "#f79009" : score >= 20 ? "#f59e0b" : "#12b76a";
+  const bgColor = score >= 60 ? "#fef3f2" : score >= 40 ? "#fffaeb" : score >= 20 ? "#fffaeb" : "#ecfdf3";
+  const icon    = score >= 60 ? "🚨" : score >= 40 ? "⚠️" : score >= 20 ? "💡" : "✅";
+
+  document.getElementById("fraudScoreNumber").textContent    = score;
+  document.getElementById("fraudScoreNumber").style.color    = color;
+  document.getElementById("fraudScoreLabel").textContent     = `${icon} ${level}`;
+  document.getElementById("fraudScoreLabel").style.color     = color;
+  document.getElementById("fraudScoreCard").style.background = bgColor;
+  document.getElementById("fraudScoreCard").style.borderColor = color;
+  document.getElementById("fraudScoreBar").style.width       = score + "%";
+  document.getElementById("fraudScoreBar").style.background  = color;
+
+  // Fraud type & confidence badges
+  const metaEl = document.getElementById("fraudMeta");
+  if (metaEl) {
+    metaEl.innerHTML = `
+      <span class="fraud-meta-item">🔎 Type: <strong>${data.fraud_type || "Unknown"}</strong></span>
+      <span class="fraud-meta-sep">|</span>
+      <span class="fraud-meta-item">📊 Confidence: <strong>${data.confidence || "Medium"}</strong></span>
+      <span class="fraud-meta-sep">|</span>
+      <span class="fraud-meta-item">🚩 Patterns: <strong>${data.patterns_triggered}</strong> triggered</span>
+    `;
+  }
+
+  // Red flags
+  const flagsEl = document.getElementById("fraudFlags");
+  flagsEl.innerHTML = data.red_flags.length > 0
+    ? data.red_flags.map(f => `<div class="fraud-flag-item"><span class="flag-dot"></span>${f}</div>`).join("")
+    : `<div class="fraud-flag-item safe-flag">✅ No significant red flags detected</div>`;
+
+  // Safe signals
+  const safeEl = document.getElementById("fraudSafeSignals");
+  safeEl.innerHTML = data.safe_signals.length > 0
+    ? data.safe_signals.map(s => `<div class="fraud-safe-item"><span class="safe-dot"></span>${s}</div>`).join("")
+    : `<div class="fraud-safe-item" style="color:var(--gray-400)">No safe signals identified</div>`;
+
+  // Detailed analysis
+  document.getElementById("fraudAnalysisText").innerHTML = formatCompleteReport(data.detailed_analysis);
+
+  // Recommendation
+  document.getElementById("fraudRecommendation").textContent         = data.recommendation;
+  document.getElementById("fraudRecommendationBox").style.background  = bgColor;
+  document.getElementById("fraudRecommendationBox").style.borderColor = color;
+  document.getElementById("fraudRecommendationTitle").style.color     = color;
+}
+
+function showFraudError(msg) {
+  const el = document.getElementById("fraudError");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function hideFraudError() {
+  document.getElementById("fraudError").style.display = "none";
+}
+
+/* ─── FRAUD PDF DOWNLOAD ─────────────────────────── */
+async function downloadFraudReport() {
+  const btn     = document.getElementById("fraudDownloadBtn");
+  const text    = document.getElementById("fraudInput").value.trim();
+  if (!fraudReportData) { alert("Please analyze first."); return; }
+
+  btn.disabled  = true;
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Generating PDF…`;
+
+  try {
+    const payload = {
+      ...fraudReportData,
+      analyzed_text: text.substring(0, 500)
+    };
+    const res = await fetch("/fraud/pdf", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "PDF generation failed");
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `ETMS_Fraud_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert("PDF Error: " + e.message);
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download Report PDF`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   A.O.S — ACCOUNTING OVERFLOWS SYSTEM CHATBOT
+   ═══════════════════════════════════════════════════ */
+
+let aosHistory      = [];
+let aosTyping       = false;
+let aosInitialized  = false;
+let aosSessionCtx   = {};        // financial facts remembered in session
+let aosSaveTimer    = null;      // debounce save timer
+
+// ── Save history to backend ──────────────────────────
+async function saveAOSHistory() {
+  if (!currentUser || aosHistory.length === 0) return;
+  try {
+    await fetch("/aos/history/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: currentUser, messages: aosHistory })
+    });
+  } catch(e) {}
+}
+
+// ── Debounced save (saves 3s after last message) ─────
+function scheduleSave() {
+  clearTimeout(aosSaveTimer);
+  aosSaveTimer = setTimeout(saveAOSHistory, 3000);
+}
+
+// ── Load history from backend ────────────────────────
+async function loadAOSHistory() {
+  if (!currentUser) return;
+  try {
+    const res  = await fetch(`/aos/history?user=${currentUser}`);
+    const data = await res.json();
+    const msgs = data.messages || [];
+    if (msgs.length === 0) return;
+
+    // Restore messages to UI
+    const container = document.getElementById("aosMessages");
+    if (!container) return;
+    container.innerHTML = "";
+
+    // Show a "history loaded" divider
+    const divider = document.createElement("div");
+    divider.className = "aos-history-divider";
+    divider.innerHTML = `<span>Previous conversation</span>`;
+    container.appendChild(divider);
+
+    msgs.forEach(m => {
+      addAOSMessage(m.role, m.content, true); // true = restore mode (no animation delay)
+    });
+
+    // Add current session divider
+    const now = document.createElement("div");
+    now.className = "aos-history-divider aos-history-now";
+    now.innerHTML = `<span>Current session — ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>`;
+    container.appendChild(now);
+
+    aosHistory = msgs;
+    document.getElementById("aosQuickActions").style.display = "none";
+    container.scrollTop = container.scrollHeight;
+  } catch(e) {}
+}
+
+// ── Load saved session context from backend ──────────
+async function loadAOSContext() {
+  if (!currentUser) return;
+  try {
+    const res  = await fetch(`/aos/context?user=${currentUser}`);
+    const data = await res.json();
+    aosSessionCtx = data.context || {};
+  } catch(e) {}
+}
+
+// ── Initialize with welcome message ─────────────────
+async function initAOS() {
+  const hour  = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const name  = currentUser ? `, ${currentUser}` : "";
+
+  // Try to load persistent history first
+  await loadAOSContext();
+  await loadAOSHistory();
+
+  // Only show welcome if no history
+  if (aosHistory.length === 0) {
+    addAOSMessage("aos", `${greet}${name}! 👋 I'm **A.O.S** — your Accounting Overflows System.
+
+I'm here to help you with:
+• 💰 **Tax saving** strategies & deductions
+• 📊 **Budget planning** & expense limits
+• 📈 **Investment advice** (SIP, PPF, NPS, ELSS)
+• 🔍 **ETMS guidance** — just ask where anything is!
+• 🧾 **Financial planning** & goal setting
+
+What would you like help with today?`);
+  }
+}
+
+// ── Send message ────────────────────────────────────
+async function sendAOSMessage() {
+  const input = document.getElementById("aosInput");
+  const msg   = input.value.trim();
+  if (!msg || aosTyping) return;
+
+  addAOSMessage("user", msg);
+  aosHistory.push({ role: "user", content: msg, time: new Date().toISOString() });
+  input.value = "";
+  aosAutoResize(input);
+
+  document.getElementById("aosQuickActions").style.display = "none";
+
+  aosTyping = true;
+  const typingId = showAOSTyping();
+  document.getElementById("aosSendBtn").disabled = true;
+
+  try {
+    const res = await fetch("/aos/chat", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        message:         msg,
+        user:            currentUser || "",
+        history:         aosHistory.slice(-14),
+        session_context: aosSessionCtx
+      })
+    });
+    // Safely handle response
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch(e) {
+      removeAOSTyping(typingId);
+      addAOSMessage("aos", "I'm having a small technical hiccup right now. Please try again in a moment! 🔄");
+      return;
+    }
+    removeAOSTyping(typingId);
+    const reply = data.reply || "I'm having trouble responding. Please try again!";
+    addAOSMessage("aos", reply);
+    aosHistory.push({ role: "aos", content: reply, time: new Date().toISOString() });
+    if (aosHistory.length > 100) aosHistory = aosHistory.slice(-80);
+    // Merge session context returned from backend
+    if (data.session_context && Object.keys(data.session_context).length > 0) {
+      aosSessionCtx = { ...aosSessionCtx, ...data.session_context };
+    }
+    // Auto-save history after every exchange
+    scheduleSave();
+  } catch(e) {
+    removeAOSTyping(typingId);
+    addAOSMessage("aos", "Connection issue — please make sure the ETMS backend is running and try again! 🔄");
+  } finally {
+    aosTyping = false;
+    document.getElementById("aosSendBtn").disabled = false;
+    document.getElementById("aosInput")?.focus();
+  }
+}
+
+// ── Quick action ─────────────────────────────────────
+function sendQuick(msg) {
+  document.getElementById("aosInput").value = msg;
+  sendAOSMessage();
+}
+
+// ── Keyboard handler ─────────────────────────────────
+function aosKeyDown(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendAOSMessage();
+  }
+}
+
+// ── Auto resize textarea ──────────────────────────────
+function aosAutoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
+// ── Add message to chat ──────────────────────────────
+function addAOSMessage(role, text, isRestore = false) {
+  const container = document.getElementById("aosMessages");
+  if (!container) return;
+  const isAOS = role === "aos";
+  const now   = new Date().toLocaleTimeString("en-IN", {hour:"2-digit", minute:"2-digit"});
+
+  const div  = document.createElement("div");
+  div.className = `aos-msg aos-msg-${role}`;
+
+  const formatted = formatAOSText(text);
+  div.innerHTML = `
+    ${isAOS ? `<div class="aos-msg-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/></svg></div>` : ""}
+    <div class="aos-msg-bubble">
+      <div class="aos-msg-content">${formatted}</div>
+      <span class="aos-msg-time">${now}</span>
+    </div>
+    ${!isAOS ? `<div class="aos-msg-user-avatar">${currentUser ? currentUser.charAt(0).toUpperCase() : 'U'}</div>` : ""}
+  `;
+
+  container.appendChild(div);
+  // Skip animation for restored history messages
+  if (isRestore) {
+    div.classList.add("visible");
+    div.style.opacity = "0.85"; // slightly dimmed to show it's history
+  } else {
+    requestAnimationFrame(() => div.classList.add("visible"));
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+// ── Format AOS text (markdown-lite) ─────────────────
+function formatAOSText(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/^### (.+)$/gm, "<h4>$1</h4>")
+    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^• (.+)$/gm, "<div class='aos-bullet'>$1</div>")
+    .replace(/^- (.+)$/gm, "<div class='aos-bullet'>$1</div>")
+    .replace(/^\d+\. (.+)$/gm, "<div class='aos-numbered'>$1</div>")
+    .replace(/\|(.+)\|/g, (match) => {
+      const cells = match.split("|").filter(c => c.trim() && !c.match(/^[-\s|]+$/));
+      if (!cells.length) return match;
+      return `<div class="aos-table-row">${cells.map(c => `<span>${c.trim()}</span>`).join("")}</div>`;
+    })
+    .replace(/\n\n/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+}
+
+// ── Typing indicator ─────────────────────────────────
+function showAOSTyping() {
+  const container = document.getElementById("aosMessages");
+  const id = "typing_" + Date.now();
+  const div = document.createElement("div");
+  div.className = "aos-msg aos-msg-aos";
+  div.id = id;
+  div.innerHTML = `
+    <div class="aos-msg-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/></svg></div>
+    <div class="aos-msg-bubble">
+      <div class="aos-typing-dots"><span></span><span></span><span></span></div>
+    </div>
+  `;
+  container.appendChild(div);
+  requestAnimationFrame(() => div.classList.add("visible"));
+  container.scrollTop = container.scrollHeight;
+  return id;
+}
+
+function removeAOSTyping(id) {
+  document.getElementById(id)?.remove();
+}
+
+// ── Clear chat ───────────────────────────────────────
+async function clearAOSChat() {
+  if (!confirm("Clear the full chat history? This cannot be undone.")) return;
+  document.getElementById("aosMessages").innerHTML = "";
+  aosHistory    = [];
+  aosSessionCtx = {};
+  document.getElementById("aosQuickActions").style.display = "flex";
+  // Clear from backend
+  if (currentUser) {
+    try {
+      await fetch("/aos/history/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: currentUser, messages: [] })
+      });
+      await fetch("/aos/context/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: currentUser, context: {} })
+      });
+    } catch(e) {}
+  }
+  initAOS();
 }
