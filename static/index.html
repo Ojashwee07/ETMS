@@ -258,7 +258,7 @@
   <!-- ── DASHBOARD ── -->
   <div id="appPage" style="display:none">
 
-    <nav class="navbar">
+    <nav class="navbar" id="mainNavbar">
       <div class="nav-left">
         <div class="nav-brand-icon">
           <svg width="18" height="18" viewBox="0 0 28 28" fill="none">
@@ -268,22 +268,292 @@
         <span class="nav-brand">ETMS</span>
         <span class="nav-sep"></span>
         <div class="nav-tabs">
-          <button class="nav-tab active" onclick="showSection('dashboard', this)">Dashboard</button>
-          <button class="nav-tab" onclick="showSection('report', this)">📊 Monthly Report</button>
+          <button class="nav-tab active" onclick="showSection('dashboard', this)">🏠 Dashboard</button>
+          <button class="nav-tab" onclick="showSection('report', this)">📊 Reports</button>
           <button class="nav-tab" onclick="showSection('targets', this)">🎯 Targets</button>
+          <button class="nav-tab" onclick="showSection('fraud', this)">🔍 Fraud Detector</button>
+          <button class="nav-tab nav-tab-aos" onclick="showSection('aos', this)">🤖 A.O.S</button>
         </div>
       </div>
       <div class="nav-right">
-        <div class="nav-user">
-          <div class="user-avatar" id="userAvatar">U</div>
-          <span class="user-name" id="navUsername">User</span>
-        </div>
-        <button class="btn-logout" onclick="logout()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Logout
+        <!-- Notification Bell -->
+        <button class="nav-icon-btn" id="notifBtn" onclick="toggleNotif()" title="Notifications">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <span class="notif-dot" id="notifDot"></span>
         </button>
+        <!-- Profile -->
+        <div class="profile-wrap" id="profileWrap">
+          <div class="nav-user" onclick="toggleProfileMenu()" id="profileTrigger">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <div class="user-info">
+              <span class="user-name" id="navUsername">User</span>
+              <span class="user-role">Member</span>
+            </div>
+            <svg class="profile-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6,9 12,15 18,9"/></svg>
+          </div>
+          <!-- Profile Dropdown -->
+          <div class="profile-dropdown" id="profileDropdown">
+            <div class="profile-dropdown-header">
+              <div class="pd-avatar" id="pdAvatar">U</div>
+              <div class="pd-info">
+                <span class="pd-name" id="pdName">User</span>
+                <span class="pd-email" id="pdEmail">ETMS Member</span>
+              </div>
+            </div>
+            <div class="pd-divider"></div>
+            <button class="pd-item" onclick="openMyAccount()">
+              <div class="pd-item-icon" style="background:#eff3ff;color:#3b6ef8">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              </div>
+              <span>My Account</span>
+              <svg class="pd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <button class="pd-item" onclick="openSettings()">
+              <div class="pd-item-icon" style="background:#f5f3ff;color:#7c3aed">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              </div>
+              <span>Settings</span>
+              <svg class="pd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <button class="pd-item" onclick="toggleDarkMode()">
+              <div class="pd-item-icon" style="background:#f9fafb;color:#344054" id="darkModeIcon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+              </div>
+              <span id="darkModeLabel">Dark Mode</span>
+              <div class="pd-toggle" id="darkModeToggle"></div>
+            </button>
+            <button class="pd-item" onclick="showSection('report', document.querySelectorAll('.nav-tab')[1]); closeProfileMenu()">
+              <div class="pd-item-icon" style="background:#ecfdf3;color:#12b76a">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/></svg>
+              </div>
+              <span>Monthly Report</span>
+              <svg class="pd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <button class="pd-item" onclick="showSection('fraud', document.querySelectorAll('.nav-tab')[3]); closeProfileMenu()">
+              <div class="pd-item-icon" style="background:#fef3f2;color:#f04438">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <span>Fraud Detector</span>
+              <svg class="pd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <div class="pd-divider"></div>
+            <button class="pd-item pd-item-danger" onclick="logout()">
+              <div class="pd-item-icon" style="background:#fef3f2;color:#f04438">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </div>
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
       </div>
     </nav>
+
+    <!-- ── SETTINGS PANEL ── -->
+    <div class="panel-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+    <div class="side-panel" id="settingsPanel">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <div class="panel-icon" style="background:#f5f3ff;color:#7c3aed">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          </div>
+          <h2 class="panel-title">Settings</h2>
+        </div>
+        <button class="panel-close" onclick="closeSettings()">✕</button>
+      </div>
+      <div class="panel-body">
+        <!-- Appearance -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">🎨 Appearance</h3>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Dark Mode</span>
+              <span class="settings-item-sub">Switch to dark theme</span>
+            </div>
+            <button class="toggle-switch" id="settingsDarkToggle" onclick="toggleDarkMode()"><div class="toggle-thumb"></div></button>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Accent Color</span>
+              <span class="settings-item-sub">Choose your theme color</span>
+            </div>
+            <div class="color-swatches">
+              <div class="swatch active" style="background:#3b6ef8" onclick="setAccent('#3b6ef8','#2952d9')" title="Blue"></div>
+              <div class="swatch" style="background:#7c3aed" onclick="setAccent('#7c3aed','#5b21b6')" title="Purple"></div>
+              <div class="swatch" style="background:#059669" onclick="setAccent('#059669','#047857')" title="Green"></div>
+              <div class="swatch" style="background:#dc2626" onclick="setAccent('#dc2626','#b91c1c')" title="Red"></div>
+              <div class="swatch" style="background:#d97706" onclick="setAccent('#d97706','#b45309')" title="Amber"></div>
+              <div class="swatch" style="background:#0891b2" onclick="setAccent('#0891b2','#0e7490')" title="Cyan"></div>
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Font Size</span>
+              <span class="settings-item-sub">Adjust text size</span>
+            </div>
+            <div class="font-size-btns">
+              <button onclick="setFontSize(13)" class="fs-btn">S</button>
+              <button onclick="setFontSize(15)" class="fs-btn active">M</button>
+              <button onclick="setFontSize(17)" class="fs-btn">L</button>
+            </div>
+          </div>
+        </div>
+        <!-- Notifications -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">🔔 Notifications</h3>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Budget Alerts</span>
+              <span class="settings-item-sub">Alert when near budget limit</span>
+            </div>
+            <button class="toggle-switch active" id="budgetAlertToggle" onclick="this.classList.toggle('active')"><div class="toggle-thumb"></div></button>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Monthly Summary</span>
+              <span class="settings-item-sub">End of month report reminder</span>
+            </div>
+            <button class="toggle-switch active" id="summaryToggle" onclick="this.classList.toggle('active')"><div class="toggle-thumb"></div></button>
+          </div>
+        </div>
+        <!-- Data -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">💾 Data & Privacy</h3>
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <span class="settings-item-label">Currency</span>
+              <span class="settings-item-sub">Display currency</span>
+            </div>
+            <select class="settings-select" id="currencySelect">
+              <option value="INR">₹ INR</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+              <option value="GBP">£ GBP</option>
+            </select>
+          </div>
+          <button class="settings-danger-btn" onclick="confirmClearData()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6m3,0V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg>
+            Clear All Data
+          </button>
+        </div>
+        <!-- About -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">ℹ️ About</h3>
+          <div class="about-card">
+            <div class="about-logo">
+              <svg width="20" height="20" viewBox="0 0 28 28" fill="none"><path d="M7 18l4-5 3 3 5-7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <p class="about-name">ETMS v2.0</p>
+              <p class="about-desc">Expense Tracker Management System</p>
+              <p class="about-tech">FastAPI · MongoDB · Gemini AI</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MY ACCOUNT PANEL ── -->
+    <div class="panel-overlay" id="accountOverlay" onclick="closeMyAccount()"></div>
+    <div class="side-panel" id="accountPanel">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <div class="panel-icon" style="background:#eff3ff;color:#3b6ef8">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          </div>
+          <h2 class="panel-title">My Account</h2>
+        </div>
+        <button class="panel-close" onclick="closeMyAccount()">✕</button>
+      </div>
+      <div class="panel-body">
+        <!-- Profile Card -->
+        <div class="account-profile-card">
+          <div class="account-avatar" id="accountAvatar">U</div>
+          <div class="account-info">
+            <h3 class="account-name" id="accountName">User</h3>
+            <p class="account-since">Member since <span id="accountSince">2026</span></p>
+          </div>
+        </div>
+        <!-- Stats -->
+        <div class="account-stats-grid">
+          <div class="account-stat">
+            <span class="account-stat-val" id="acTotalTxns">0</span>
+            <span class="account-stat-lbl">Transactions</span>
+          </div>
+          <div class="account-stat">
+            <span class="account-stat-val" id="acTotalIncome">₹0</span>
+            <span class="account-stat-lbl">Total Income</span>
+          </div>
+          <div class="account-stat">
+            <span class="account-stat-val" id="acTotalExpense">₹0</span>
+            <span class="account-stat-lbl">Total Expense</span>
+          </div>
+        </div>
+        <!-- Account Details -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">👤 Profile Details</h3>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Username</span>
+            <span class="account-detail-val" id="acUsername">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Full Name</span>
+            <span class="account-detail-val" id="acFullname">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Email</span>
+            <span class="account-detail-val" id="acEmail">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Phone</span>
+            <span class="account-detail-val" id="acPhone">—</span>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3 class="settings-section-title">💰 Financial Profile</h3>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Monthly Income</span>
+            <span class="account-detail-val" id="acIncome">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Income Source</span>
+            <span class="account-detail-val" id="acIncomeSource">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Monthly Budget</span>
+            <span class="account-detail-val" id="acBudget">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Savings Goal</span>
+            <span class="account-detail-val" id="acSavingsGoal">—</span>
+          </div>
+          <div class="account-detail-item">
+            <span class="account-detail-label">Currency</span>
+            <span class="account-detail-val" id="acCurrency">INR</span>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3 class="settings-section-title">🔐 Security</h3>
+          <button class="settings-outline-btn" onclick="alert('Password change coming soon!')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Change Password
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NOTIFICATION PANEL ── -->
+    <div class="notif-panel" id="notifPanel">
+      <div class="notif-header">
+        <span class="notif-title">Notifications</span>
+        <button class="notif-clear" onclick="clearNotifications()">Clear all</button>
+      </div>
+      <div id="notifList" class="notif-list">
+        <div class="notif-empty">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <p>No notifications yet</p>
+        </div>
+      </div>
+    </div>
 
     <!-- ── DASHBOARD SECTION ── -->
     <div id="dashboardSection">
@@ -785,6 +1055,207 @@
             <div id="tgtList" style="display:flex; flex-direction:column; gap:14px"></div>
           </div>
 
+        </div>
+      </main>
+    </div>
+
+    <!-- ── FRAUD DETECTOR SECTION ── -->
+    <div id="fraudSection" style="display:none">
+      <main class="main-content">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">🔍 Financial Fraud Detector</h1>
+            <p class="page-sub">Analyze messages, URLs, or images for financial fraud indicators</p>
+          </div>
+        </div>
+
+        <!-- Input Card -->
+        <div class="card fraud-input-card">
+          <div class="card-header">
+            <h2 class="card-title">📝 Submit Content for Analysis</h2>
+            <div class="fraud-badge-row">
+              <span class="fraud-badge">Text</span>
+              <span class="fraud-badge">URL</span>
+              <span class="fraud-badge">Image</span>
+              <span class="fraud-badge">File</span>
+            </div>
+          </div>
+          <div id="fraudError" class="alert alert-error" style="display:none"></div>
+          <div class="form-group">
+            <label>Paste Message, SMS, Email or URL</label>
+            <textarea id="fraudInput" class="fraud-textarea"
+              placeholder="Paste suspicious message, SMS, email content, or URL here...&#10;&#10;Example: 'Congratulations! You have won Rs.50,000. Click here to claim your prize immediately. Share your bank details to transfer funds.'"
+              rows="6"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Or Upload a File / Image</label>
+            <div class="fraud-drop-zone" id="fraudDropZone"
+              ondrop="handleFraudDrop(event)"
+              ondragover="handleFraudDragOver(event)"
+              ondragleave="handleFraudDragLeave()"
+              onclick="document.getElementById('fraudFileInput').click()">
+              <div class="drop-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <p class="drop-title">Drag & drop or click to upload</p>
+              <p class="drop-sub">Supports: Images (JPG, PNG), Text files, PDFs</p>
+              <input type="file" id="fraudFileInput" style="display:none"
+                accept="image/*,.txt,.pdf,.csv"
+                onchange="handleFraudFileInput(this)">
+              <input type="hidden" id="fraudFileData">
+              <input type="hidden" id="fraudFileType">
+            </div>
+            <div id="fraudFileInfo" style="display:none" class="fraud-file-info">
+              <span id="fraudFileName" class="fraud-file-name"></span>
+              <button class="fraud-file-remove" onclick="clearFraudFile()">✕ Remove</button>
+            </div>
+            <div id="fraudImagePreviewWrap" style="display:none; margin-top:10px">
+              <img id="fraudImagePreview" style="max-width:100%; max-height:200px; border-radius:8px; border:1.5px solid var(--gray-200)">
+            </div>
+          </div>
+          <button class="btn-fraud-analyze" id="fraudAnalyzeBtn" onclick="analyzeFraud()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span id="fraudAnalyzeBtnText">Analyze for Fraud</span>
+          </button>
+        </div>
+
+        <!-- Result Section -->
+        <div id="fraudResult" style="display:none; margin-top:20px">
+          <div class="fraud-score-card" id="fraudScoreCard">
+            <div class="fraud-score-left">
+              <div class="fraud-score-circle">
+                <span class="fraud-score-num" id="fraudScoreNumber">0</span>
+                <span class="fraud-score-out">/100</span>
+              </div>
+              <span class="fraud-score-title">Fraud Risk Score</span>
+            </div>
+            <div class="fraud-score-right">
+              <span class="fraud-score-label" id="fraudScoreLabel">Analyzing…</span>
+              <div class="fraud-score-bar-track">
+                <div class="fraud-score-bar-fill" id="fraudScoreBar" style="width:0%"></div>
+              </div>
+              <div class="fraud-scale-labels">
+                <span>0 Safe</span><span>25 Low</span><span>50 Medium</span><span>80+ High</span>
+              </div>
+            </div>
+          </div>
+          <!-- Fraud type & confidence -->
+          <div id="fraudMeta" class="fraud-meta-bar"></div>
+          <div class="fraud-grid" style="margin-top:16px">
+            <div class="card">
+              <div class="card-header"><h2 class="card-title" style="color:#f04438">🚩 Red Flags Detected</h2></div>
+              <div id="fraudFlags" class="fraud-flags-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h2 class="card-title" style="color:#12b76a">✅ Safe Signals</h2></div>
+              <div id="fraudSafeSignals" class="fraud-safe-list"></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header"><h2 class="card-title">🔎 Detailed Analysis</h2></div>
+            <div id="fraudAnalysisText" class="complete-report-content"></div>
+          </div>
+          <div class="fraud-recommendation-box" id="fraudRecommendationBox" style="margin-top:16px">
+            <div class="fraud-rec-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span class="fraud-rec-title" id="fraudRecommendationTitle">Our Recommendation</span>
+            </div>
+            <p id="fraudRecommendation" class="fraud-rec-text"></p>
+          </div>
+          <div style="margin-top:16px; display:flex; justify-content:flex-end">
+            <button class="btn-download" id="fraudDownloadBtn" onclick="downloadFraudReport()" style="display:none; padding:12px 24px; font-size:0.9rem">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Report PDF
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ── A.O.S SECTION ── -->
+    <div id="aosSection" style="display:none">
+      <main class="main-content aos-main">
+        <!-- AOS Header -->
+        <div class="aos-section-header">
+          <div class="aos-section-brand">
+            <div class="aos-section-avatar">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/><path d="M8 8V6a4 4 0 018 0v2"/></svg>
+            </div>
+            <div>
+              <h1 class="aos-section-name">A.O.S</h1>
+              <p class="aos-section-sub"><span class="aos-status-dot"></span> Accounting Overflows System · AI Financial Assistant</p>
+            </div>
+          </div>
+          <button class="aos-clear-btn" onclick="clearAOSChat()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6m3,0V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg>
+            Clear Chat
+          </button>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="aos-section-chat">
+          <!-- Capabilities sidebar -->
+          <div class="aos-sidebar">
+            <h3 class="aos-sidebar-title">What I can help with</h3>
+            <div class="aos-capability-list">
+              <div class="aos-cap-item" onclick="sendQuick('How can I save taxes legally in India?')">
+                <span class="aos-cap-icon">💰</span>
+                <div><p class="aos-cap-title">Tax Saving</p><p class="aos-cap-sub">80C, 80D, HRA, NPS</p></div>
+              </div>
+              <div class="aos-cap-item" onclick="sendQuick('Create a personalised monthly budget for me')">
+                <span class="aos-cap-icon">📊</span>
+                <div><p class="aos-cap-title">Budget Planning</p><p class="aos-cap-sub">50-30-20 rule & custom</p></div>
+              </div>
+              <div class="aos-cap-item" onclick="sendQuick('Best investment options for beginners in India')">
+                <span class="aos-cap-icon">📈</span>
+                <div><p class="aos-cap-title">Investments</p><p class="aos-cap-sub">SIP, PPF, ELSS, NPS</p></div>
+              </div>
+              <div class="aos-cap-item" onclick="sendQuick('How to build an emergency fund?')">
+                <span class="aos-cap-icon">🛡️</span>
+                <div><p class="aos-cap-title">Emergency Fund</p><p class="aos-cap-sub">Safety net planning</p></div>
+              </div>
+              <div class="aos-cap-item" onclick="sendQuick('How do I manage my loan and EMI payments?')">
+                <span class="aos-cap-icon">🏦</span>
+                <div><p class="aos-cap-title">Debt Management</p><p class="aos-cap-sub">Loans, EMI strategies</p></div>
+              </div>
+              <div class="aos-cap-item" onclick="sendQuick('Where is the settings option in ETMS?')">
+                <span class="aos-cap-icon">🔍</span>
+                <div><p class="aos-cap-title">ETMS Guide</p><p class="aos-cap-sub">Find any feature</p></div>
+              </div>
+            </div>
+            <div class="aos-disclaimer">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              A.O.S provides general financial guidance. For legal/tax matters, consult a certified CA.
+            </div>
+          </div>
+
+          <!-- Main chat area -->
+          <div class="aos-chat-main">
+            <div class="aos-messages aos-messages-section" id="aosMessages"></div>
+
+            <!-- Quick chips -->
+            <div class="aos-chips-wrap" id="aosQuickActions">
+              <button class="aos-chip" onclick="sendQuick('My income is Rs.50,000. Help me save Rs.10,000 per month')">💰 Savings plan</button>
+              <button class="aos-chip" onclick="sendQuick('How can I save taxes legally in India?')">🧾 Save tax</button>
+              <button class="aos-chip" onclick="sendQuick('What is SIP and how to start one?')">📈 What is SIP?</button>
+              <button class="aos-chip" onclick="sendQuick('Explain the 50-30-20 budgeting rule')">📊 50-30-20 rule</button>
+              <button class="aos-chip" onclick="sendQuick('How do I generate a monthly report in ETMS?')">📋 Monthly report</button>
+              <button class="aos-chip" onclick="sendQuick('Where is the dark mode in ETMS?')">🌙 Dark mode</button>
+              <button class="aos-chip" onclick="sendQuick('How to build an emergency fund?')">🛡️ Emergency fund</button>
+              <button class="aos-chip" onclick="sendQuick('Best investment for Rs.5000 per month in India')">💡 Invest Rs.5000/month</button>
+            </div>
+
+            <!-- Input -->
+            <div class="aos-section-input-wrap">
+              <div class="aos-section-input-box">
+                <textarea id="aosInput" class="aos-input" placeholder="Ask A.O.S anything about finance, tax, investments, or how to use ETMS..." rows="1" onkeydown="aosKeyDown(event)" oninput="aosAutoResize(this)"></textarea>
+                <button class="aos-send-btn" id="aosSendBtn" onclick="sendAOSMessage()">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
+                </button>
+              </div>
+              <p class="aos-footer-note">Press Enter to send · Shift+Enter for new line · A.O.S · ETMS v2.0</p>
+            </div>
+          </div>
         </div>
       </main>
     </div>
