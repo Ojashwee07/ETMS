@@ -380,8 +380,10 @@ function showSection(section, btn) {
   document.getElementById("reportSection").style.display    = section === "report"    ? "block" : "none";
   document.getElementById("targetsSection").style.display   = section === "targets"   ? "block" : "none";
   document.getElementById("fraudSection").style.display     = section === "fraud"     ? "block" : "none";
+  document.getElementById("uploadSection").style.display    = section === "upload"    ? "block" : "none";
   document.getElementById("aosSection").style.display       = section === "aos"       ? "block" : "none";
   if (section === "targets") loadTargets();
+  if (section === "upload")  { loadImportHistory(); loadMinLimit(); }
   if (section === "aos" && !aosInitialized) { initAOS(); aosInitialized = true; }
 }
 
@@ -1683,4 +1685,286 @@ async function clearAOSChat() {
     } catch(e) {}
   }
   initAOS();
+}
+
+/* ═══════════════════════════════════════════════════
+   UPLOAD FILES — Automatic Transaction Import
+   ═══════════════════════════════════════════════════ */
+
+let uploadedFileData = null;   // base64 string
+let uploadedFileName = "";
+let uploadedFileType = "";
+let extractedTxns    = [];     // preview rows from backend
+
+/* ── Min limit ─────────────────────────────────────── */
+function saveMinLimit() {
+  const val = document.getElementById("minLimitSelect").value;
+  localStorage.setItem("etms_min_limit", val);
+}
+function loadMinLimit() {
+  const saved = localStorage.getItem("etms_min_limit") || "100";
+  const sel   = document.getElementById("minLimitSelect");
+  if (sel) sel.value = saved;
+}
+
+/* ── Drag & drop handlers ──────────────────────────── */
+function handleUploadDragOver(e) {
+  e.preventDefault();
+  document.getElementById("uploadDropZone").classList.add("drag-over");
+}
+function handleUploadDragLeave() {
+  document.getElementById("uploadDropZone").classList.remove("drag-over");
+}
+function handleUploadDrop(e) {
+  e.preventDefault();
+  document.getElementById("uploadDropZone").classList.remove("drag-over");
+  const files = e.dataTransfer.files;
+  if (files.length > 0) readUploadFile(files[0]);
+}
+function handleUploadFileSelect(input) {
+  if (input.files.length > 0) readUploadFile(input.files[0]);
+}
+
+function readUploadFile(file) {
+  const allowed = ["application/pdf","text/csv","application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!["pdf","csv","xlsx","xls"].includes(ext)) {
+    showUploadError("Unsupported file type. Please upload PDF, CSV, XLSX, or XLS.");
+    return;
+  }
+  hideUploadError();
+  uploadedFileName = file.name;
+  uploadedFileType = ext;
+  document.getElementById("uploadFileName").textContent = "📎 " + file.name;
+  document.getElementById("uploadFileInfo").style.display = "flex";
+  document.getElementById("uploadProcessBtn").style.display = "inline-flex";
+  document.getElementById("uploadPreviewCard").style.display = "none";
+  extractedTxns = [];
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    uploadedFileData = e.target.result.split(",")[1]; // base64
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearUploadFile() {
+  uploadedFileData = null; uploadedFileName = ""; uploadedFileType = "";
+  extractedTxns = [];
+  document.getElementById("uploadFileInfo").style.display  = "none";
+  document.getElementById("uploadProcessBtn").style.display = "none";
+  document.getElementById("uploadPreviewCard").style.display = "none";
+  document.getElementById("uploadFileInput").value = "";
+  document.getElementById("uploadProgress").style.display  = "none";
+  hideUploadError();
+}
+
+/* ── Process file (send to backend) ───────────────── */
+async function processUploadedFile() {
+  if (!uploadedFileData) { showUploadError("No file selected."); return; }
+  const btn     = document.getElementById("uploadProcessBtn");
+  const btnText = document.getElementById("uploadProcessBtnText");
+  const minLimit = parseInt(document.getElementById("minLimitSelect").value) || 100;
+
+  btn.disabled = true; btnText.textContent = "Extracting…";
+  showUploadProgress(10, "Uploading file…");
+  hideUploadError();
+
+  try {
+    showUploadProgress(30, "Parsing file…");
+    const res = await fetch("/upload-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user: currentUser,
+        filename: uploadedFileName,
+        file_type: uploadedFileType,
+        file_data: uploadedFileData,
+        min_limit: minLimit
+      })
+    });
+    showUploadProgress(70, "Extracting transactions…");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Extraction failed");
+    showUploadProgress(100, "Done!");
+
+    extractedTxns = data.transactions || [];
+    renderUploadPreview(extractedTxns, data.stats);
+    setTimeout(() => { document.getElementById("uploadProgress").style.display = "none"; }, 600);
+  } catch(e) {
+    showUploadError("Error: " + e.message);
+    document.getElementById("uploadProgress").style.display = "none";
+  } finally {
+    btn.disabled = false; btnText.textContent = "Extract Transactions";
+  }
+}
+
+function showUploadProgress(pct, label) {
+  document.getElementById("uploadProgress").style.display = "block";
+  document.getElementById("uploadProgressFill").style.width = pct + "%";
+  document.getElementById("uploadProgressLabel").textContent = label;
+}
+
+/* ── Render preview table ─────────────────────────── */
+function renderUploadPreview(txns, stats) {
+  const card    = document.getElementById("uploadPreviewCard");
+  const tbody   = document.getElementById("uploadPreviewBody");
+  const countEl = document.getElementById("uploadPreviewCount");
+
+  card.style.display = "block";
+  countEl.textContent = `${txns.length} transactions found`;
+  tbody.innerHTML = "";
+
+  txns.forEach((t, i) => {
+    const isDupe    = t.status === "duplicate";
+    const isBelow   = t.status === "below_limit";
+    const isValid   = t.status === "valid";
+    const statusBadge = isDupe
+      ? `<span class="upload-badge upload-badge-dupe">Duplicate</span>`
+      : isBelow
+        ? `<span class="upload-badge upload-badge-ignored">Below Limit</span>`
+        : `<span class="upload-badge upload-badge-valid">Ready</span>`;
+    const typeColor = t.type === "income" ? "var(--green)" : "var(--red)";
+    const sign      = t.type === "income" ? "+" : "−";
+    const disabled  = !isValid ? "disabled" : "";
+    const checked   = isValid ? "checked" : "";
+
+    tbody.innerHTML += `<tr class="${isDupe ? 'upload-row-dupe' : isBelow ? 'upload-row-ignored' : ''}">
+      <td><input type="checkbox" class="upload-row-check" data-idx="${i}" ${checked} ${disabled}></td>
+      <td class="upload-td-date">${escapeHtml(t.date || "—")}</td>
+      <td class="upload-td-desc">${escapeHtml(t.description || "—")}</td>
+      <td><span class="upload-cat-tag">${escapeHtml(t.category || "Other")}</span></td>
+      <td style="color:${typeColor};font-weight:700">${t.type === "income" ? "📈 Income" : "📉 Expense"}</td>
+      <td style="font-family:var(--font-mono);font-weight:700;color:${typeColor}">${sign}₹${parseFloat(t.amount).toLocaleString("en-IN")}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  });
+
+  // Update summary cards
+  if (stats) {
+    document.getElementById("uploadSummaryCards").style.display = "grid";
+    document.getElementById("uc-total").textContent     = stats.total      || 0;
+    document.getElementById("uc-imported").textContent  = "—";
+    document.getElementById("uc-dupes").textContent     = stats.duplicates || 0;
+    document.getElementById("uc-ignored").textContent   = stats.ignored    || 0;
+    document.getElementById("uc-belowlimit").textContent= stats.below_limit|| 0;
+  }
+  updateSelectionHint();
+
+  // Checkbox listeners
+  document.querySelectorAll(".upload-row-check").forEach(cb => {
+    cb.addEventListener("change", updateSelectionHint);
+  });
+}
+
+function toggleSelectAll(masterCb) {
+  document.querySelectorAll(".upload-row-check:not([disabled])").forEach(cb => {
+    cb.checked = masterCb.checked;
+  });
+  updateSelectionHint();
+}
+
+function updateSelectionHint() {
+  const checked = document.querySelectorAll(".upload-row-check:checked").length;
+  document.getElementById("uploadSelectionHint").textContent =
+    `${checked} transaction${checked !== 1 ? "s" : ""} selected`;
+}
+
+/* ── Import selected transactions ─────────────────── */
+async function importTransactions() {
+  const checked = [...document.querySelectorAll(".upload-row-check:checked")];
+  if (checked.length === 0) { showUploadError("Please select at least one transaction to import."); return; }
+
+  const indices  = checked.map(cb => parseInt(cb.dataset.idx));
+  const toImport = indices.map(i => extractedTxns[i]).filter(t => t.status === "valid");
+
+  if (toImport.length === 0) { showUploadError("No valid transactions selected (duplicates/below-limit cannot be imported)."); return; }
+
+  const btn     = document.getElementById("uploadImportBtn");
+  const btnText = document.getElementById("uploadImportBtnText");
+  btn.disabled  = true; btnText.textContent = "Importing…";
+
+  try {
+    const res  = await fetch("/import-transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user: currentUser,
+        filename: uploadedFileName,
+        file_type: uploadedFileType,
+        transactions: toImport
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Import failed");
+
+    // Update cards
+    document.getElementById("uc-imported").textContent = data.imported_count || 0;
+    addNotification(`✅ Imported ${data.imported_count} transactions from ${uploadedFileName}`, "success");
+    loadData(); // refresh dashboard
+    loadImportHistory();
+
+    // Show success alert
+    const errEl = document.getElementById("uploadError");
+    errEl.className = "alert alert-success";
+    errEl.textContent = `✅ Successfully imported ${data.imported_count} transaction(s)! Dashboard updated.`;
+    errEl.style.display = "block";
+    setTimeout(() => { errEl.style.display = "none"; }, 4000);
+
+    // Disable imported rows
+    checked.forEach(cb => {
+      cb.disabled = true; cb.checked = false;
+      const row = cb.closest("tr");
+      row.querySelectorAll("td:last-child")[0].innerHTML = `<span class="upload-badge upload-badge-valid">Imported ✓</span>`;
+    });
+    updateSelectionHint();
+  } catch(e) {
+    showUploadError("Import error: " + e.message);
+  } finally {
+    btn.disabled = false; btnText.textContent = "Import Selected";
+  }
+}
+
+/* ── Import history ───────────────────────────────── */
+async function loadImportHistory() {
+  if (!currentUser) return;
+  try {
+    const res  = await fetch(`/import-history?user=${currentUser}`);
+    const data = await res.json();
+    renderImportHistory(data.history || []);
+  } catch(e) {}
+}
+
+function renderImportHistory(history) {
+  const el = document.getElementById("importHistoryList");
+  if (!history.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:32px">
+      <div class="empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg></div>
+      <p>No import history yet</p><span>Uploaded files will appear here</span>
+    </div>`;
+    return;
+  }
+  el.innerHTML = history.map(h => `
+    <div class="import-history-row">
+      <div class="ih-icon">📄</div>
+      <div class="ih-body">
+        <span class="ih-name">${escapeHtml(h.filename)}</span>
+        <span class="ih-meta">${escapeHtml(h.file_type.toUpperCase())} · ${escapeHtml(h.upload_time)}</span>
+      </div>
+      <div class="ih-stats">
+        <span class="ih-stat green">${h.imported_records} imported</span>
+        <span class="ih-stat purple">${h.duplicate_records} dupes</span>
+        <span class="ih-stat red">${h.ignored_records} ignored</span>
+      </div>
+    </div>`).join("");
+}
+
+function showUploadError(msg) {
+  const el = document.getElementById("uploadError");
+  el.className = "alert alert-error";
+  el.textContent = msg; el.style.display = "block";
+}
+function hideUploadError() {
+  document.getElementById("uploadError").style.display = "none";
 }
