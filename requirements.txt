@@ -4,3 +4,7 @@ pymongo
 python-dotenv
 google-genai
 reportlab
+pdfplumber
+pandas
+openpyxl
+xlrd
