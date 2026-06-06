@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, validator
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import hashlib, uuid, os, json, io
+import hashlib, uuid, os, json, io, base64, csv, re
 from datetime import datetime
 from collections import defaultdict
 from google import genai as google_genai
@@ -25,12 +25,13 @@ app = FastAPI(title="ETMS - Expense Tracker Management System")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 client    = MongoClient(MONGO_URI)
 db        = client["etms_db"]
-users_col   = db["users"]
-txns_col    = db["transactions"]
-targets_col = db["targets"]
-aos_hist_col  = db["aos_chat_history"]    # persistent chat history per user
-aos_ctx_col   = db["aos_user_context"]    # extracted financial context per user
-aos_learn_col = db["aos_learned_qa"]      # self-training Q&A store
+users_col      = db["users"]
+txns_col       = db["transactions"]
+targets_col    = db["targets"]
+aos_hist_col   = db["aos_chat_history"]
+aos_ctx_col    = db["aos_user_context"]
+aos_learn_col  = db["aos_learned_qa"]
+import_hist_col = db["import_history"]
 
 # ── Create indexes for performance ──────────────────
 try:
@@ -2542,5 +2543,386 @@ Just ask naturally — I'll understand! 😊""", "source": "clarify", "session_c
 
     reply_text = response_map[best_intent]()
     return {"reply": reply_text, "source": "smart", "session_context": {}}
+
+# ═══════════════════════════════════════════════════════
+# UPLOAD FILES — Automatic Transaction Import
+# ═══════════════════════════════════════════════════════
+
+class UploadFileRequest(BaseModel):
+    user: str
+    filename: str
+    file_type: str          # pdf | csv | xlsx | xls
+    file_data: str          # base64
+    min_limit: float = 100.0
+
+class ImportRequest(BaseModel):
+    user: str
+    filename: str
+    file_type: str
+    transactions: list
+
+# ── Helpers ──────────────────────────────────────────────
+
+CATEGORY_KEYWORDS = {
+    "Salary":       ["salary","sal","payroll","wages","stipend","pay credit","neft cr","imps cr"],
+    "Groceries":    ["grocery","supermarket","bigbasket","zepto","blinkit","swiggy instamart","dmart","reliance fresh","more store","spencer","nature basket"],
+    "Food":         ["restaurant","zomato","swiggy","food","cafe","dominos","mcdonald","kfc","pizza","burger","biryani","dhaba","eat"],
+    "Transport":    ["uber","ola","rapido","auto","taxi","bus","metro","train","irctc","petrol","fuel","diesel","rapido","rickshaw"],
+    "Shopping":     ["amazon","flipkart","myntra","ajio","meesho","nykaa","shop","mall","fashion","clothing","apparel","store"],
+    "Utilities":    ["electricity","water","gas","broadband","internet","airtel","jio","vodafone","bsnl","tata sky","dish tv","utility","bill"],
+    "Healthcare":   ["hospital","clinic","pharmacy","medplus","apollo","1mg","netmeds","diagnostic","lab","doctor","health","medicine"],
+    "Entertainment":["netflix","hotstar","spotify","prime video","youtube","bookmyshow","pvr","inox","game","steam"],
+    "Rent":         ["rent","pg","hostel","accommodation","housing","maintenance","society"],
+    "Education":    ["school","college","university","course","udemy","coursera","fee","tuition","book"],
+    "Insurance":    ["lic","insurance","premium","hdfc life","sbi life","bajaj allianz","star health","max life"],
+    "Investment":   ["mutual fund","sip","ppf","nps","zerodha","groww","upstox","demat","ipo","fd","rd","deposit"],
+    "EMI":          ["emi","loan","bajaj finance","hdfc bank emi","axis bank emi","icici emi","home loan","car loan"],
+    "ATM":          ["atm","cash withdrawal","cash cdm"],
+    "Transfer":     ["transfer","neft","rtgs","imps","upi","phonepe","paytm","gpay","google pay","bhim"],
+}
+
+def categorize_transaction(desc: str) -> str:
+    d = desc.lower()
+    for cat, keys in CATEGORY_KEYWORDS.items():
+        if any(k in d for k in keys):
+            return cat
+    return "Other"
+
+def detect_type(desc: str, amount: float) -> str:
+    """Income if positive credit, expense if debit."""
+    d = desc.lower()
+    income_signals  = ["credit","cr ","credited","received","salary","refund","cashback","interest cr","imps cr","neft cr","reversal cr"]
+    expense_signals = ["debit","dr ","debited","paid","payment","purchase","withdrawal","emi","bill"]
+    if any(s in d for s in income_signals) or amount > 0:
+        return "income"
+    return "expense"
+
+def parse_amount(raw) -> float:
+    """Convert various amount formats to float."""
+    if isinstance(raw, (int, float)):
+        return abs(float(raw))
+    s = str(raw).replace(",","").replace("₹","").replace("Rs.","").replace("INR","").strip()
+    s = re.sub(r"[^\d.]", "", s)
+    try:
+        return abs(float(s))
+    except:
+        return 0.0
+
+def parse_date(raw) -> str:
+    if not raw:
+        return datetime.now().strftime("%d %b %Y")
+    s = str(raw).strip()
+    fmts = ["%d/%m/%Y","%Y-%m-%d","%d-%m-%Y","%d %b %Y","%d-%b-%Y",
+            "%d/%m/%y","%m/%d/%Y","%Y/%m/%d","%d.%m.%Y"]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s[:10], fmt).strftime("%d %b %Y")
+        except:
+            pass
+    # Try pandas
+    try:
+        import pandas as pd
+        return pd.to_datetime(s).strftime("%d %b %Y")
+    except:
+        pass
+    return s[:10]
+
+def is_duplicate(user: str, date: str, amount: float, category: str) -> bool:
+    """Check if a nearly identical transaction exists already."""
+    existing = txns_col.find({"user": user}, {"_id": 0, "amount": 1, "category": 1, "created_at": 1})
+    for t in existing:
+        try:
+            ex_amt = abs(float(t["amount"]))
+            # Same amount (within ₹1) AND same category root
+            if abs(ex_amt - amount) < 1 and category.lower() in t["category"].lower():
+                return True
+        except:
+            pass
+    return False
+
+def ai_categorize(descriptions: list) -> dict:
+    """Use Gemini to categorize a batch of unknown transactions."""
+    if not descriptions:
+        return {}
+    prompt = (
+        "For each bank transaction description below, reply ONLY with JSON mapping "
+        "the exact description to a one-word category from: "
+        "Salary,Groceries,Food,Transport,Shopping,Utilities,Healthcare,Entertainment,"
+        "Rent,Education,Insurance,Investment,EMI,ATM,Transfer,Other\n\n"
+        + "\n".join(f"- {d}" for d in descriptions[:20])
+        + "\n\nRespond ONLY with JSON like: {\"desc1\":\"Food\",\"desc2\":\"Salary\"}"
+    )
+    try:
+        raw = gemini_client.models.generate_content(model="gemini-2.0-flash", contents=prompt).text.strip()
+        raw = re.sub(r"```json|```", "", raw).strip()
+        return json.loads(raw)
+    except:
+        return {}
+
+def extract_from_pdf(raw_bytes: bytes) -> list:
+    """Extract rows from PDF bank statement."""
+    import pdfplumber
+    rows = []
+    try:
+        with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+            for page in pdf.pages:
+                # Try tables first
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if not row:
+                            continue
+                        row_text = [str(c).strip() if c else "" for c in row]
+                        rows.append(row_text)
+                # Fallback: raw text lines
+                if not tables:
+                    text = page.extract_text() or ""
+                    for line in text.split("\n"):
+                        rows.append([line])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"PDF parse error: {str(e)}")
+    return rows
+
+def extract_from_csv(raw_bytes: bytes) -> list:
+    text = raw_bytes.decode("utf-8", errors="replace")
+    reader = csv.reader(io.StringIO(text))
+    return list(reader)
+
+def extract_from_excel(raw_bytes: bytes, ext: str) -> list:
+    try:
+        import pandas as pd
+        df = pd.read_excel(io.BytesIO(raw_bytes), engine="openpyxl" if ext == "xlsx" else "xlrd")
+        df = df.fillna("")
+        rows = [list(df.columns.astype(str))]
+        for _, r in df.iterrows():
+            rows.append([str(v) for v in r.values])
+        return rows
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Excel parse error: {str(e)}")
+
+def rows_to_transactions(rows: list, user: str, min_limit: float) -> tuple:
+    """
+    Heuristically parse raw rows into transaction dicts.
+    Returns (transactions, stats).
+    """
+    txns = []
+    stats = {"total": 0, "valid": 0, "duplicates": 0, "below_limit": 0, "ignored": 0}
+
+    # Find header row — look for row containing date/amount keywords
+    header_idx = 0
+    header_map = {}
+    date_keys   = ["date","txn date","value date","transaction date","posting date"]
+    desc_keys   = ["description","narration","particulars","remarks","details","transaction details","txn","particulars"]
+    amount_keys = ["amount","debit","credit","withdrawal","deposit","txn amount","transaction amount"]
+    debit_keys  = ["debit","withdrawal","dr","dr amount"]
+    credit_keys = ["credit","deposit","cr","cr amount"]
+
+    for i, row in enumerate(rows[:20]):
+        row_lower = [str(c).lower().strip() for c in row]
+        if any(any(k in cell for k in date_keys) for cell in row_lower):
+            header_idx = i
+            for j, cell in enumerate(row_lower):
+                for k in date_keys:
+                    if k in cell: header_map.setdefault("date", j)
+                for k in desc_keys:
+                    if k in cell: header_map.setdefault("desc", j)
+                for k in amount_keys:
+                    if k in cell: header_map.setdefault("amount", j)
+                for k in debit_keys:
+                    if k in cell: header_map.setdefault("debit", j)
+                for k in credit_keys:
+                    if k in cell: header_map.setdefault("credit", j)
+            break
+
+    # Collect unknown descriptions for AI batch categorization
+    unknown_descs = []
+
+    for row in rows[header_idx + 1:]:
+        if not row or all(str(c).strip() == "" for c in row):
+            continue
+
+        # Extract date
+        date_val = ""
+        if "date" in header_map and header_map["date"] < len(row):
+            date_val = parse_date(row[header_map["date"]])
+        else:
+            # Scan row for date-like value
+            for cell in row:
+                s = str(cell).strip()
+                if re.search(r"\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}", s):
+                    date_val = parse_date(s)
+                    break
+            if not date_val:
+                date_val = datetime.now().strftime("%d %b %Y")
+
+        # Extract description
+        desc = ""
+        if "desc" in header_map and header_map["desc"] < len(row):
+            desc = str(row[header_map["desc"]]).strip()
+        else:
+            # Use longest text cell
+            desc = max((str(c) for c in row), key=len, default="")
+
+        # Extract amount — prefer separate debit/credit columns
+        amount = 0.0
+        txn_type = "expense"
+        if "debit" in header_map and "credit" in header_map:
+            dv = parse_amount(row[header_map["debit"]] if header_map["debit"] < len(row) else "")
+            cv = parse_amount(row[header_map["credit"]] if header_map["credit"] < len(row) else "")
+            if cv > 0:
+                amount = cv; txn_type = "income"
+            elif dv > 0:
+                amount = dv; txn_type = "expense"
+        elif "amount" in header_map and header_map["amount"] < len(row):
+            amount = parse_amount(row[header_map["amount"]])
+            txn_type = detect_type(desc, amount)
+        else:
+            # Scan for numeric cell
+            for cell in row:
+                a = parse_amount(cell)
+                if a > 0:
+                    amount = a
+                    txn_type = detect_type(desc, a)
+                    break
+
+        if amount <= 0 or not desc:
+            stats["ignored"] += 1
+            continue
+
+        stats["total"] += 1
+        category = categorize_transaction(desc)
+        if category == "Other":
+            unknown_descs.append(desc)
+
+        # Status checks
+        if amount < min_limit:
+            status = "below_limit"
+            stats["below_limit"] += 1
+        elif is_duplicate(user, date_val, amount, category):
+            status = "duplicate"
+            stats["duplicates"] += 1
+        else:
+            status = "valid"
+            stats["valid"] += 1
+
+        txns.append({
+            "date": date_val,
+            "description": desc[:120],
+            "category": category,
+            "type": txn_type,
+            "amount": round(amount, 2),
+            "status": status
+        })
+
+    # AI batch categorize unknowns
+    if unknown_descs:
+        ai_cats = ai_categorize(list(set(unknown_descs)))
+        for t in txns:
+            if t["category"] == "Other" and t["description"] in ai_cats:
+                t["category"] = ai_cats[t["description"]]
+
+    return txns, stats
+
+
+# ── POST /upload-file ───────────────────────────────────
+@app.post("/upload-file")
+def upload_file(body: UploadFileRequest):
+    if not body.file_data:
+        raise HTTPException(status_code=400, detail="No file data provided")
+    if body.file_type not in ("pdf", "csv", "xlsx", "xls"):
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    try:
+        raw_bytes = base64.b64decode(body.file_data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 file data")
+
+    if len(raw_bytes) == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # Parse file into raw rows
+    if body.file_type == "pdf":
+        rows = extract_from_pdf(raw_bytes)
+    elif body.file_type == "csv":
+        rows = extract_from_csv(raw_bytes)
+    else:
+        rows = extract_from_excel(raw_bytes, body.file_type)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No data found in file")
+
+    txns, stats = rows_to_transactions(rows, body.user, body.min_limit)
+
+    if not txns:
+        raise HTTPException(status_code=400, detail="No valid transactions could be extracted from this file")
+
+    return {"transactions": txns, "stats": stats}
+
+
+# ── POST /import-transactions ───────────────────────────
+@app.post("/import-transactions")
+def import_transactions(body: ImportRequest):
+    if not body.transactions:
+        raise HTTPException(status_code=400, detail="No transactions to import")
+
+    imported = 0
+    for t in body.transactions:
+        if t.get("status") != "valid":
+            continue
+        amount = float(t["amount"])
+        if t["type"] == "expense":
+            amount = -abs(amount)
+        category = t.get("category", "Other")
+        desc     = t.get("description", "")
+        full_cat = f"{category} — {desc}" if desc else category
+        dt_str   = t.get("date", datetime.now().strftime("%d %b %Y"))
+        # Normalize date to expected format
+        try:
+            dt_obj = datetime.strptime(dt_str, "%d %b %Y")
+            created_at = dt_obj.strftime("%d %b %Y, 12:00 PM")
+        except:
+            created_at = datetime.now().strftime("%d %b %Y, %I:%M %p")
+
+        txns_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "amount": str(amount),
+            "category": full_cat,
+            "user": body.user,
+            "created_at": created_at
+        })
+        imported += 1
+
+    # Save to import history
+    import_hist_col.insert_one({
+        "id": str(uuid.uuid4()),
+        "username": body.user,
+        "filename": body.filename,
+        "file_type": body.file_type,
+        "total_records": len(body.transactions),
+        "imported_records": imported,
+        "duplicate_records": sum(1 for t in body.transactions if t.get("status") == "duplicate"),
+        "ignored_records": sum(1 for t in body.transactions if t.get("status") not in ("valid","duplicate","below_limit")),
+        "below_limit_records": sum(1 for t in body.transactions if t.get("status") == "below_limit"),
+        "upload_time": datetime.now().strftime("%d %b %Y, %I:%M %p")
+    })
+
+    return {"status": "ok", "imported_count": imported}
+
+
+# ── GET /import-history ─────────────────────────────────
+@app.get("/import-history")
+def get_import_history(user: str):
+    if not user:
+        return {"history": []}
+    docs = list(
+        import_hist_col
+        .find({"username": user}, {"_id": 0})
+        .sort("upload_time", -1)
+        .limit(20)
+    )
+    for d in docs:
+        d.pop("id", None)
+    return {"history": docs}
+
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
