@@ -2364,3 +2364,114 @@ html.dark .aos-history-divider::before,
 html.dark .aos-history-divider::after { background: #2e333d; }
 html.dark .aos-history-divider span   { background: #252930; border-color: #2e333d; }
 html.dark .aos-history-now span       { background: #1a2540; }
+
+/* ═══════════════════════════════════════════════════
+   UPLOAD FILES SECTION
+   ═══════════════════════════════════════════════════ */
+
+.nav-tab-upload {
+  background: rgba(255,255,255,0.12) !important;
+  border: 1px solid rgba(255,255,255,0.25) !important;
+}
+.nav-tab-upload:hover { background: rgba(255,255,255,0.22) !important; }
+.nav-tab-upload.active { background: var(--blue-light) !important; color: var(--blue) !important; border-color: rgba(59,110,248,0.3) !important; }
+
+.upload-min-limit-wrap {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; background: white;
+  border: 1.5px solid var(--gray-200); border-radius: var(--radius-md);
+}
+.upload-min-label { font-size: 0.8rem; font-weight: 600; color: var(--gray-600); white-space: nowrap; }
+
+.upload-stat-grid { margin-bottom: 0 !important; }
+
+.upload-drop-zone { min-height: 180px; cursor: pointer; }
+.upload-drop-zone .drop-icon { color: var(--blue); opacity: 0.55; margin-bottom: 14px; }
+
+/* Progress bar */
+.upload-progress-track {
+  width: 100%; height: 8px; background: var(--gray-100);
+  border-radius: 99px; overflow: hidden; margin-bottom: 6px;
+}
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--blue-dark));
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+.upload-progress-label { font-size: 0.8rem; color: var(--gray-500); text-align: center; }
+
+/* Preview table */
+.upload-preview-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.upload-preview-table thead tr {
+  background: var(--gray-50);
+  border-bottom: 2px solid var(--gray-100);
+}
+.upload-preview-table th {
+  padding: 11px 14px; text-align: left;
+  font-size: 0.75rem; font-weight: 700;
+  color: var(--gray-500); text-transform: uppercase;
+  letter-spacing: 0.05em; white-space: nowrap;
+}
+.upload-preview-table td {
+  padding: 11px 14px; border-bottom: 1px solid var(--gray-50);
+  vertical-align: middle;
+}
+.upload-preview-table tbody tr:hover { background: var(--gray-25); }
+.upload-row-dupe    { background: #fef9ff !important; opacity: 0.75; }
+.upload-row-ignored { background: #fff8f0 !important; opacity: 0.7; }
+
+.upload-td-date { white-space: nowrap; font-family: var(--font-mono); font-size: 0.8rem; color: var(--gray-500); }
+.upload-td-desc { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.upload-badge {
+  padding: 3px 10px; border-radius: 99px;
+  font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+}
+.upload-badge-valid   { background: var(--green-light);  color: var(--green-dark); }
+.upload-badge-dupe    { background: var(--purple-light);  color: var(--purple); }
+.upload-badge-ignored { background: #fffaeb; color: var(--amber); }
+
+.upload-cat-tag {
+  padding: 3px 9px; border-radius: 6px;
+  background: var(--blue-light); color: var(--blue);
+  font-size: 0.75rem; font-weight: 600;
+}
+
+.upload-hint {
+  font-size: 0.8rem; color: var(--gray-500); font-weight: 500; margin-left: 4px;
+}
+
+/* Import history */
+.import-history-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 24px; border-bottom: 1px solid var(--gray-50);
+  transition: background 0.15s;
+}
+.import-history-row:last-child { border-bottom: none; }
+.import-history-row:hover { background: var(--gray-25); }
+.ih-icon { font-size: 1.4rem; flex-shrink: 0; }
+.ih-body { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.ih-name { font-size: 0.88rem; font-weight: 700; color: var(--gray-800); }
+.ih-meta { font-size: 0.75rem; color: var(--gray-400); }
+.ih-stats { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.ih-stat {
+  padding: 3px 10px; border-radius: 99px;
+  font-size: 0.73rem; font-weight: 700;
+}
+.ih-stat.green  { background: var(--green-light);  color: var(--green-dark); }
+.ih-stat.purple { background: var(--purple-light);  color: var(--purple); }
+.ih-stat.red    { background: var(--red-light);     color: var(--red-dark); }
+
+/* Dark mode */
+html.dark .upload-min-limit-wrap { background: #1e2128; border-color: #2e333d; }
+html.dark .upload-preview-table thead tr { background: #252930; }
+html.dark .upload-preview-table td { border-bottom-color: #2e333d; }
+html.dark .upload-preview-table tbody tr:hover { background: #252930; }
+html.dark .upload-row-dupe    { background: #1e1a2e !important; }
+html.dark .upload-row-ignored { background: #211d14 !important; }
+html.dark .import-history-row:hover { background: #252930; }
+html.dark .import-history-row { border-bottom-color: #2e333d; }
