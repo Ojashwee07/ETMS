@@ -271,6 +271,7 @@
           <button class="nav-tab active" onclick="showSection('dashboard', this)">🏠 Dashboard</button>
           <button class="nav-tab" onclick="showSection('report', this)">📊 Reports</button>
           <button class="nav-tab" onclick="showSection('targets', this)">🎯 Targets</button>
+          <button class="nav-tab nav-tab-splits" onclick="showSection('splits', this)">👥 Splits</button>
           <button class="nav-tab" onclick="showSection('fraud', this)">🔍 Fraud Detector</button>
           <button class="nav-tab nav-tab-upload" onclick="showSection('upload', this)">📂 Upload Files</button>
           <button class="nav-tab nav-tab-aos" onclick="showSection('aos', this)">🤖 A.O.S</button>
@@ -1060,7 +1061,96 @@
       </main>
     </div>
 
-    <!-- ── FRAUD DETECTOR SECTION ── -->
+    <!-- ── SPLITS SECTION ── -->
+    <div id="splitsSection" style="display:none">
+      <main class="main-content">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">👥 Split Expenses</h1>
+            <p class="page-sub">Split bills with friends & track who owes what</p>
+          </div>
+          <button class="btn-primary" onclick="openCreateGroupModal()" style="white-space:nowrap">
+            + New Group
+          </button>
+        </div>
+
+        <!-- Empty state -->
+        <div id="splitsEmpty" class="empty-state" style="display:none; margin-top:60px">
+          <div style="font-size:3rem; margin-bottom:12px">👥</div>
+          <h3 style="color:var(--gray-700); margin-bottom:6px">No groups yet</h3>
+          <p style="color:var(--gray-400)">Create a group with friends to start splitting expenses</p>
+          <button class="btn-primary" onclick="openCreateGroupModal()" style="margin-top:20px">Create First Group</button>
+        </div>
+
+        <!-- Groups list -->
+        <div id="splitsGroupsList"></div>
+      </main>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div id="createGroupModal" class="modal-overlay" style="display:none" onclick="closeSplitModal(event)">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2 class="modal-title">Create Group</h2>
+          <button class="modal-close" onclick="closeCreateGroupModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Group Name</label>
+            <input type="text" id="newGroupName" class="form-input" placeholder="e.g. Goa Trip, Flat Expenses…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Add Members (username)</label>
+            <div style="display:flex; gap:8px">
+              <input type="text" id="newMemberInput" class="form-input" placeholder="Enter username" onkeydown="if(event.key==='Enter'){addMemberTag();event.preventDefault()}">
+              <button class="btn-primary" onclick="addMemberTag()" style="white-space:nowrap; padding:0 18px">Add</button>
+            </div>
+            <div id="memberTagsWrap" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px"></div>
+            <p id="memberTagNote" style="font-size:0.78rem; color:var(--gray-400); margin-top:6px">You are added automatically</p>
+          </div>
+          <div id="createGroupError" class="alert alert-error" style="display:none"></div>
+          <button class="btn-primary full" id="createGroupBtn" onclick="createGroup()">
+            <span id="createGroupBtnText">Create Group</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Expense Modal -->
+    <div id="addExpenseModal" class="modal-overlay" style="display:none" onclick="closeSplitModal(event)">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2 class="modal-title">Add Expense</h2>
+          <button class="modal-close" onclick="closeAddExpenseModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="expenseGroupId">
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <input type="text" id="expenseDesc" class="form-input" placeholder="e.g. Dinner at Punjab Grill">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Total Amount (₹)</label>
+            <input type="number" id="expenseAmount" class="form-input" placeholder="0.00" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Paid By</label>
+            <select id="expensePaidBy" class="form-input"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Split Among</label>
+            <div id="splitAmongChecks" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px"></div>
+          </div>
+          <div id="splitPreview" style="font-size:0.82rem; color:var(--blue); margin-top:4px; font-weight:500"></div>
+          <div id="addExpenseError" class="alert alert-error" style="display:none; margin-top:10px"></div>
+          <button class="btn-primary full" id="addExpenseBtn" onclick="submitAddExpense()" style="margin-top:16px">
+            <span id="addExpenseBtnText">Add Expense</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRAUD DETECTOR SECTION -->
     <div id="fraudSection" style="display:none">
       <main class="main-content">
         <div class="page-header">

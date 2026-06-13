@@ -379,10 +379,12 @@ function showSection(section, btn) {
   document.getElementById("dashboardSection").style.display = section === "dashboard" ? "block" : "none";
   document.getElementById("reportSection").style.display    = section === "report"    ? "block" : "none";
   document.getElementById("targetsSection").style.display   = section === "targets"   ? "block" : "none";
+  document.getElementById("splitsSection").style.display    = section === "splits"    ? "block" : "none";
   document.getElementById("fraudSection").style.display     = section === "fraud"     ? "block" : "none";
   document.getElementById("uploadSection").style.display    = section === "upload"    ? "block" : "none";
   document.getElementById("aosSection").style.display       = section === "aos"       ? "block" : "none";
   if (section === "targets") loadTargets();
+  if (section === "splits")  loadSplitGroups();
   if (section === "upload")  { loadImportHistory(); loadMinLimit(); }
   if (section === "aos" && !aosInitialized) { initAOS(); aosInitialized = true; }
 }
@@ -1967,4 +1969,295 @@ function showUploadError(msg) {
 }
 function hideUploadError() {
   document.getElementById("uploadError").style.display = "none";
+}
+
+/* ══════════════════════════════════════════════════
+   SPLIT EXPENSE — Full Frontend Logic
+══════════════════════════════════════════════════ */
+
+let splitGroupMembers = [];   // members being added in create-group modal
+let currentExpenseGroup = {}; // group context when adding expense
+
+// ── Load & render all groups ──────────────────────
+async function loadSplitGroups() {
+  const user = localStorage.getItem("etms_user");
+  if (!user) return;
+  try {
+    const res  = await fetch(`/splits?user=${encodeURIComponent(user)}`);
+    const data = await res.json();
+    renderSplitGroups(Array.isArray(data) ? data : []);
+  } catch (e) {
+    console.error("loadSplitGroups error", e);
+  }
+}
+
+function renderSplitGroups(groups) {
+  const container = document.getElementById("splitsGroupsList");
+  const empty     = document.getElementById("splitsEmpty");
+  if (!groups.length) {
+    container.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  const user = localStorage.getItem("etms_user");
+
+  container.innerHTML = groups.map(g => {
+    const balances = g.balances || {};
+    const net      = balances.net || {};
+    const debts    = balances.debts || [];
+    const myNet    = net[user] || 0;
+
+    // Summary badge
+    let myBadge = "";
+    if (Math.abs(myNet) < 0.01) {
+      myBadge = `<span class="split-badge split-settled">✓ Settled</span>`;
+    } else if (myNet > 0) {
+      myBadge = `<span class="split-badge split-owed">+₹${myNet.toFixed(2)} owed to you</span>`;
+    } else {
+      myBadge = `<span class="split-badge split-owe">-₹${Math.abs(myNet).toFixed(2)} you owe</span>`;
+    }
+
+    // Debts summary
+    const debtsHtml = debts.length
+      ? debts.map(d =>
+          `<div class="split-debt-row">
+            <span class="split-debt-from">${d.from}</span>
+            <span class="split-debt-arrow">→</span>
+            <span class="split-debt-to">${d.to}</span>
+            <span class="split-debt-amt">₹${d.amount.toFixed(2)}</span>
+            ${(d.from === user || d.to === user)
+              ? `<button class="btn-settle" onclick="settleUp('${g.id}','${d.from}','${d.to}',${d.amount})">Settle</button>`
+              : ""}
+          </div>`
+        ).join("")
+      : `<p style="color:var(--gray-400); font-size:0.82rem; padding:6px 0">All settled up ✓</p>`;
+
+    // Expenses list
+    const expHtml = (g.expenses || []).length
+      ? [...g.expenses].reverse().map(e =>
+          `<div class="split-exp-row">
+            <div class="split-exp-info">
+              <span class="split-exp-desc">${e.description}</span>
+              <span class="split-exp-meta">${e.paid_by} paid · split ${e.split_among.length} ways · ${e.date}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px">
+              <span class="split-exp-amt">₹${e.amount.toFixed(2)}</span>
+              <button class="split-del-btn" onclick="deleteExpense('${g.id}','${e.id}')" title="Delete">🗑</button>
+            </div>
+          </div>`
+        ).join("")
+      : `<p style="color:var(--gray-400); font-size:0.82rem; padding:6px 0">No expenses yet</p>`;
+
+    const isCreator = g.created_by === user;
+    return `
+      <div class="card split-group-card" style="margin-bottom:20px">
+        <div class="split-group-header">
+          <div>
+            <h3 class="split-group-name">${g.name}</h3>
+            <span class="split-group-meta">👥 ${g.members.join(", ")} · ${g.created_at}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px">
+            ${myBadge}
+            <button class="btn-primary" onclick="openAddExpenseModal('${g.id}','${g.name}',${JSON.stringify(g.members).replace(/"/g,'&quot;')})" style="padding:6px 14px; font-size:0.82rem">+ Expense</button>
+            ${isCreator ? `<button class="split-del-btn" onclick="deleteGroup('${g.id}')" title="Delete group" style="font-size:1rem">🗑</button>` : ""}
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <p class="split-sub-title">📋 Expenses</p>
+          ${expHtml}
+        </div>
+
+        <div style="margin-top:16px">
+          <p class="split-sub-title">💸 Who Owes Whom</p>
+          ${debtsHtml}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ── Create Group Modal ────────────────────────────
+function openCreateGroupModal() {
+  splitGroupMembers = [];
+  document.getElementById("newGroupName").value = "";
+  document.getElementById("newMemberInput").value = "";
+  document.getElementById("memberTagsWrap").innerHTML = "";
+  document.getElementById("createGroupError").style.display = "none";
+  document.getElementById("createGroupModal").style.display = "flex";
+  setTimeout(() => document.getElementById("newGroupName").focus(), 50);
+}
+function closeCreateGroupModal() {
+  document.getElementById("createGroupModal").style.display = "none";
+}
+function closeSplitModal(e) {
+  if (e.target.classList.contains("modal-overlay")) {
+    document.querySelectorAll(".modal-overlay").forEach(m => m.style.display = "none");
+  }
+}
+
+function addMemberTag() {
+  const input = document.getElementById("newMemberInput");
+  const val   = input.value.trim().toLowerCase();
+  const me    = localStorage.getItem("etms_user");
+  if (!val) return;
+  if (val === me) { showSplitError("createGroupError", "You are added automatically"); input.value=""; return; }
+  if (splitGroupMembers.includes(val)) { showSplitError("createGroupError", `${val} already added`); input.value=""; return; }
+  splitGroupMembers.push(val);
+  renderMemberTags();
+  input.value = "";
+  document.getElementById("createGroupError").style.display = "none";
+}
+
+function removeMemberTag(name) {
+  splitGroupMembers = splitGroupMembers.filter(m => m !== name);
+  renderMemberTags();
+}
+
+function renderMemberTags() {
+  const wrap = document.getElementById("memberTagsWrap");
+  wrap.innerHTML = splitGroupMembers.map(m =>
+    `<span class="member-tag">${m} <button onclick="removeMemberTag('${m}')" class="tag-remove">×</button></span>`
+  ).join("");
+}
+
+async function createGroup() {
+  const name    = document.getElementById("newGroupName").value.trim();
+  const user    = localStorage.getItem("etms_user");
+  const errEl   = document.getElementById("createGroupError");
+  const btn     = document.getElementById("createGroupBtnText");
+
+  if (!name) { showSplitError("createGroupError", "Enter a group name"); return; }
+  if (!splitGroupMembers.length) { showSplitError("createGroupError", "Add at least one other member"); return; }
+
+  btn.textContent = "Creating…";
+  try {
+    const res  = await fetch("/splits/create", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ name, created_by: user, members: [user, ...splitGroupMembers] })
+    });
+    const data = await res.json();
+    if (!res.ok) { showSplitError("createGroupError", data.detail || "Error creating group"); btn.textContent="Create Group"; return; }
+    closeCreateGroupModal();
+    loadSplitGroups();
+  } catch (e) {
+    showSplitError("createGroupError", "Network error");
+  }
+  btn.textContent = "Create Group";
+}
+
+// ── Add Expense Modal ─────────────────────────────
+function openAddExpenseModal(groupId, groupName, members) {
+  currentExpenseGroup = { id: groupId, name: groupName, members };
+  document.getElementById("expenseGroupId").value = groupId;
+  document.getElementById("expenseDesc").value = "";
+  document.getElementById("expenseAmount").value = "";
+  document.getElementById("addExpenseError").style.display = "none";
+  document.getElementById("splitPreview").textContent = "";
+
+  // Populate paid-by dropdown
+  const paidSel = document.getElementById("expensePaidBy");
+  paidSel.innerHTML = members.map(m => `<option value="${m}">${m}</option>`).join("");
+  const me = localStorage.getItem("etms_user");
+  paidSel.value = me;
+
+  // Populate split-among checkboxes (all checked by default)
+  const checksWrap = document.getElementById("splitAmongChecks");
+  checksWrap.innerHTML = members.map(m =>
+    `<label class="split-check-label">
+      <input type="checkbox" value="${m}" checked onchange="updateSplitPreview()"> ${m}
+    </label>`
+  ).join("");
+
+  document.getElementById("expenseAmount").oninput = updateSplitPreview;
+  document.getElementById("addExpenseModal").style.display = "flex";
+  setTimeout(() => document.getElementById("expenseDesc").focus(), 50);
+}
+
+function closeAddExpenseModal() {
+  document.getElementById("addExpenseModal").style.display = "none";
+}
+
+function updateSplitPreview() {
+  const amt      = parseFloat(document.getElementById("expenseAmount").value) || 0;
+  const checked  = [...document.querySelectorAll("#splitAmongChecks input:checked")];
+  const preview  = document.getElementById("splitPreview");
+  if (amt > 0 && checked.length > 0) {
+    const per = (amt / checked.length).toFixed(2);
+    preview.textContent = `₹${per} per person (${checked.length} people)`;
+  } else {
+    preview.textContent = "";
+  }
+}
+
+async function submitAddExpense() {
+  const user    = localStorage.getItem("etms_user");
+  const groupId = document.getElementById("expenseGroupId").value;
+  const desc    = document.getElementById("expenseDesc").value.trim();
+  const amount  = parseFloat(document.getElementById("expenseAmount").value);
+  const paidBy  = document.getElementById("expensePaidBy").value;
+  const checked = [...document.querySelectorAll("#splitAmongChecks input:checked")].map(c => c.value);
+  const btn     = document.getElementById("addExpenseBtnText");
+
+  if (!desc)              { showSplitError("addExpenseError","Enter a description"); return; }
+  if (!amount || amount<=0){ showSplitError("addExpenseError","Enter valid amount"); return; }
+  if (!checked.length)    { showSplitError("addExpenseError","Select at least one person to split with"); return; }
+
+  btn.textContent = "Adding…";
+  try {
+    const res  = await fetch("/splits/add-expense", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ group_id:groupId, description:desc, amount, paid_by:paidBy, split_among:checked, user })
+    });
+    const data = await res.json();
+    if (!res.ok) { showSplitError("addExpenseError", data.detail || "Error"); btn.textContent="Add Expense"; return; }
+    closeAddExpenseModal();
+    loadSplitGroups();
+  } catch(e) {
+    showSplitError("addExpenseError","Network error");
+  }
+  btn.textContent = "Add Expense";
+}
+
+// ── Settle Up ─────────────────────────────────────
+async function settleUp(groupId, fromUser, toUser, amount) {
+  const user = localStorage.getItem("etms_user");
+  if (!confirm(`Mark ₹${amount.toFixed(2)} paid from ${fromUser} to ${toUser}?`)) return;
+  try {
+    const res = await fetch("/splits/settle", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ group_id:groupId, from_user:fromUser, to_user:toUser, amount, user })
+    });
+    if (res.ok) loadSplitGroups();
+  } catch(e) { alert("Network error"); }
+}
+
+// ── Delete Expense ────────────────────────────────
+async function deleteExpense(groupId, expenseId) {
+  const user = localStorage.getItem("etms_user");
+  if (!confirm("Delete this expense?")) return;
+  try {
+    const res = await fetch(`/splits/expense/${groupId}/${expenseId}?user=${encodeURIComponent(user)}`, { method:"DELETE" });
+    if (res.ok) loadSplitGroups();
+  } catch(e) { alert("Network error"); }
+}
+
+// ── Delete Group ──────────────────────────────────
+async function deleteGroup(groupId) {
+  const user = localStorage.getItem("etms_user");
+  if (!confirm("Delete this entire group? This cannot be undone.")) return;
+  try {
+    const res = await fetch(`/splits/group/${groupId}?user=${encodeURIComponent(user)}`, { method:"DELETE" });
+    if (res.ok) loadSplitGroups();
+  } catch(e) { alert("Network error"); }
+}
+
+// ── Util ──────────────────────────────────────────
+function showSplitError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.style.display = "block";
 }

@@ -32,6 +32,7 @@ aos_hist_col   = db["aos_chat_history"]
 aos_ctx_col    = db["aos_user_context"]
 aos_learn_col  = db["aos_learned_qa"]
 import_hist_col = db["import_history"]
+splits_col      = db["splits_groups"]
 
 # ── Create indexes for performance ──────────────────
 try:
@@ -2925,4 +2926,226 @@ def get_import_history(user: str):
     return {"history": docs}
 
 
+
+# ═══════════════════════════════════════════════════════
+# SPLIT EXPENSE — Group expense sharing (Splitwise-style)
+# ═══════════════════════════════════════════════════════
+
+class SplitGroupCreate(BaseModel):
+    name: str
+    created_by: str
+    members: list   # list of usernames (strings)
+
+    @validator("name")
+    def validate_name(cls, v):
+        v = v.strip()
+        if len(v) < 2: raise ValueError("Group name min 2 characters")
+        return v
+
+    @validator("members")
+    def validate_members(cls, v, values):
+        members = [m.strip().lower() for m in v if m.strip()]
+        creator = values.get("created_by", "").strip().lower()
+        if creator and creator not in members:
+            members.insert(0, creator)
+        if len(members) < 2:
+            raise ValueError("At least 2 members required")
+        return members
+
+class SplitExpenseAdd(BaseModel):
+    group_id: str
+    description: str
+    amount: float
+    paid_by: str        # username who paid
+    split_among: list   # list of usernames to split between
+    user: str           # current logged-in user (for auth)
+
+    @validator("amount")
+    def validate_amount(cls, v):
+        if v <= 0: raise ValueError("Amount must be positive")
+        return round(v, 2)
+
+    @validator("description")
+    def validate_desc(cls, v):
+        v = v.strip()
+        if not v: raise ValueError("Description required")
+        return v
+
+class SplitSettleUp(BaseModel):
+    group_id: str
+    from_user: str
+    to_user: str
+    amount: float
+    user: str           # current logged-in user
+
+# ── POST /splits/create ────────────────────────────────
+@app.post("/splits/create")
+def create_split_group(body: SplitGroupCreate):
+    # Verify all members exist in DB
+    missing = []
+    for m in body.members:
+        if m != body.created_by and not users_col.find_one({"username": m}):
+            missing.append(m)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Users not found: {', '.join(missing)}")
+
+    gid = str(uuid.uuid4())
+    splits_col.insert_one({
+        "id": gid,
+        "name": body.name.strip(),
+        "created_by": body.created_by,
+        "members": body.members,
+        "expenses": [],
+        "settlements": [],
+        "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
+    })
+    return {"status": "ok", "group_id": gid}
+
+# ── GET /splits ────────────────────────────────────────
+@app.get("/splits")
+def get_split_groups(user: str):
+    if not user:
+        raise HTTPException(status_code=400, detail="User required")
+    # Return all groups where user is a member
+    groups = list(splits_col.find({"members": user}, {"_id": 0}))
+
+    # For each group, compute balances
+    for g in groups:
+        g["balances"] = _compute_balances(g)
+
+    return groups
+
+# ── POST /splits/add-expense ───────────────────────────
+@app.post("/splits/add-expense")
+def add_split_expense(body: SplitExpenseAdd):
+    group = splits_col.find_one({"id": body.group_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if body.user not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a group member")
+    if body.paid_by not in group["members"]:
+        raise HTTPException(status_code=400, detail="Paid-by user not in group")
+
+    # Validate split_among are all group members
+    invalid = [m for m in body.split_among if m not in group["members"]]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Not group members: {', '.join(invalid)}")
+
+    per_person = round(body.amount / len(body.split_among), 2)
+    expense = {
+        "id": str(uuid.uuid4()),
+        "description": body.description,
+        "amount": body.amount,
+        "paid_by": body.paid_by,
+        "split_among": body.split_among,
+        "per_person": per_person,
+        "added_by": body.user,
+        "date": datetime.now().strftime("%d %b %Y, %I:%M %p")
+    }
+
+    splits_col.update_one(
+        {"id": body.group_id},
+        {"$push": {"expenses": expense}}
+    )
+    return {"status": "ok", "expense_id": expense["id"], "per_person": per_person}
+
+# ── DELETE /splits/expense ─────────────────────────────
+@app.delete("/splits/expense/{group_id}/{expense_id}")
+def delete_split_expense(group_id: str, expense_id: str, user: str):
+    group = splits_col.find_one({"id": group_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a group member")
+
+    splits_col.update_one(
+        {"id": group_id},
+        {"$pull": {"expenses": {"id": expense_id}}}
+    )
+    return {"status": "ok"}
+
+# ── POST /splits/settle ────────────────────────────────
+@app.post("/splits/settle")
+def settle_up(body: SplitSettleUp):
+    group = splits_col.find_one({"id": body.group_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if body.user not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a group member")
+
+    settlement = {
+        "id": str(uuid.uuid4()),
+        "from_user": body.from_user,
+        "to_user": body.to_user,
+        "amount": round(body.amount, 2),
+        "date": datetime.now().strftime("%d %b %Y, %I:%M %p")
+    }
+    splits_col.update_one(
+        {"id": body.group_id},
+        {"$push": {"settlements": settlement}}
+    )
+    return {"status": "ok"}
+
+# ── DELETE /splits/group/{id} ──────────────────────────
+@app.delete("/splits/group/{group_id}")
+def delete_split_group(group_id: str, user: str):
+    group = splits_col.find_one({"id": group_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group["created_by"] != user:
+        raise HTTPException(status_code=403, detail="Only creator can delete group")
+    splits_col.delete_one({"id": group_id})
+    return {"status": "ok"}
+
+# ── Helper: compute net balances for a group ───────────
+def _compute_balances(group: dict) -> dict:
+    """
+    Returns net balance per user.
+    Positive = others owe this person
+    Negative = this person owes others
+    """
+    net = {m: 0.0 for m in group["members"]}
+
+    for exp in group.get("expenses", []):
+        paid_by     = exp["paid_by"]
+        split_among = exp["split_among"]
+        per_person  = round(exp["amount"] / len(split_among), 2)
+
+        # Payer gets credit for full amount
+        net[paid_by] = round(net.get(paid_by, 0) + exp["amount"], 2)
+        # Each person in split owes their share
+        for m in split_among:
+            net[m] = round(net.get(m, 0) - per_person, 2)
+
+    # Apply settlements
+    for s in group.get("settlements", []):
+        net[s["from_user"]] = round(net.get(s["from_user"], 0) + s["amount"], 2)
+        net[s["to_user"]]   = round(net.get(s["to_user"], 0)   - s["amount"], 2)
+
+    # Compute simplified debts: who owes whom how much
+    debts = _simplify_debts(net)
+    return {"net": net, "debts": debts}
+
+def _simplify_debts(net: dict) -> list:
+    """Greedy debt simplification — minimize number of transactions."""
+    creditors = sorted([(u, v) for u, v in net.items() if v > 0.005], key=lambda x: -x[1])
+    debtors   = sorted([(u, abs(v)) for u, v in net.items() if v < -0.005], key=lambda x: -x[1])
+    debts = []
+    i, j = 0, 0
+    creditors = [list(x) for x in creditors]
+    debtors   = [list(x) for x in debtors]
+    while i < len(creditors) and j < len(debtors):
+        creditor, credit = creditors[i]
+        debtor,   debt   = debtors[j]
+        amount = round(min(credit, debt), 2)
+        if amount > 0:
+            debts.append({"from": debtor, "to": creditor, "amount": amount})
+        creditors[i][1] = round(credit - amount, 2)
+        debtors[j][1]   = round(debt   - amount, 2)
+        if creditors[i][1] < 0.005: i += 1
+        if debtors[j][1]   < 0.005: j += 1
+    return debts
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
